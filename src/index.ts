@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { Client, GatewayIntentBits, ActivityType } from 'discord.js';
 import { Player, useHistory, useQueue, type Track } from 'discord-player';
+import { DefaultExtractors } from '@discord-player/extractor';
 import { LanguageManager } from './LanguageManager.js';
 import { PlayerController } from './utils/PlayerController.js';
 import { SearchSessionManager } from './utils/searchSessions.js';
@@ -62,9 +63,9 @@ function cleanupGuildPlayer(client: BotClient, guildId: string): void {
   client.updatePresence();
 }
 
-function setupPlayer(client: BotClient): void {
+async function setupPlayer(client: BotClient): Promise<void> {
   const player = new Player(client as any);
-
+  await player.extractors.loadMulti(DefaultExtractors);
   client.discordPlayer = player;
 }
 
@@ -162,7 +163,7 @@ function setupShutdown(client: BotClient): void {
 
 async function bootstrap(): Promise<void> {
   const client = createClient();
-  setupPlayer(client);
+  await setupPlayer(client);
   registerPlayerEvents(client);
   await loadCommands(client);
   await registerEvents(client);
