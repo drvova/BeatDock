@@ -11,7 +11,7 @@ export async function loadCommands(client: BotClient): Promise<void> {
   client.commands = new Collection();
   const commandsDir = join(__dirname, '..', 'commands');
 
-  for (const file of readdirSync(commandsDir).filter(f => f.endsWith('.ts') || f.endsWith('.js'))) {
+  for (const file of readdirSync(commandsDir).filter(f => f.endsWith('.js') && !f.endsWith('.d.ts'))) {
     const { default: command } = await import(join(commandsDir, file)) as { default: Command };
     if (command?.data && typeof command?.execute === 'function') {
       const name = ('name' in command.data) ? command.data.name : undefined;

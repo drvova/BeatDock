@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export async function registerEvents(client: BotClient): Promise<void> {
   const eventsDir = join(__dirname, '..', 'events');
 
-  for (const file of readdirSync(eventsDir).filter(f => f.endsWith('.ts') || f.endsWith('.js'))) {
+  for (const file of readdirSync(eventsDir).filter(f => f.endsWith('.js') && !f.endsWith('.d.ts'))) {
     const { default: event } = await import(join(eventsDir, file)) as {
       default: { name: string; once?: boolean; execute: (...args: unknown[]) => Promise<void> | void };
     };
