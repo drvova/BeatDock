@@ -71,18 +71,28 @@ export async function handleSearchNavigation(
     const existingQueue = useQueue(session.guildId);
 
     if (!existingQueue) {
-      await player.play(
-        interaction.guild!.channels.cache.get(session.voiceChannelId) as any,
-        track,
-        {
-          nodeOptions: {
-            metadata: interaction.channel as TextChannel,
-            volume: session.volume,
-            selfDeaf: true,
-          },
-          requestedBy: interaction.user as any,
-        }
-      );
+      try {
+        await player.play(
+          interaction.guild!.channels.cache.get(session.voiceChannelId) as any,
+          track,
+          {
+            nodeOptions: {
+              metadata: interaction.channel as TextChannel,
+              volume: session.volume,
+              selfDeaf: true,
+              leaveOnEmpty: true,
+              leaveOnEmptyCooldown: 30_000,
+              leaveOnEnd: true,
+              leaveOnEndCooldown: 30_000,
+            },
+            requestedBy: interaction.user as any,
+          }
+        );
+      } catch (err) {
+        console.error('[searchNavigation] Error:', err);
+        await interaction.update({ content: `❌ ${client.t('PLAY_ERROR')}`, embeds: [], components: [] });
+        return;
+      }
     } else {
       existingQueue.tracks.add(track);
       if (!existingQueue.isPlaying()) existingQueue.node.play();

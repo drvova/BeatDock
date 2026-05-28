@@ -1,5 +1,5 @@
 import { GuildMember, SlashCommandBuilder, type TextChannel } from 'discord.js';
-import { useMainPlayer, useQueue, type SearchResult } from 'discord-player';
+import { useMainPlayer, useQueue } from 'discord-player';
 import { checkInteractionPermission } from '../utils/permissionChecker.js';
 import { getValidVolume } from '../utils/volumeValidator.js';
 import type { BotClient, Command } from '../types/client.js';
@@ -29,7 +29,7 @@ export default {
     const position = interaction.options.getInteger('position');
 
     const player = useMainPlayer();
-    const searchResult: SearchResult = await player.search(query, { requestedBy: interaction.user as any });
+    const searchResult = await player.search(query, { requestedBy: interaction.user as any });
 
     if (!searchResult.tracks.length) {
       await interaction.editReply(`❌ ${client.t('TRACK_NOT_FOUND')}`);
@@ -40,16 +40,33 @@ export default {
 
     if (!existingQueue) {
       try {
-        await player.play(voiceChannel as any, searchResult, {
+        const track = searchResult.playlist ? searchResult.playlist.tracks[0] : searchResult.tracks[0];
+        await player.play(voiceChannel as any, track, {
           nodeOptions: {
             metadata: interaction.channel as TextChannel,
             volume,
             selfDeaf: true,
+            leaveOnEmpty: true,
+            leaveOnEmptyCooldown: 30_000,
+            leaveOnEnd: true,
+            leaveOnEndCooldown: 30_000,
           },
           requestedBy: interaction.user as any,
         });
-        await interaction.editReply(`🎶 ${client.t('NOW_PLAYING')}`);
-      } catch {
+
+        if (searchResult.playlist) {
+          const queue = useQueue(interaction.guild!.id);
+          if (queue) {
+            for (let i = 1; i < searchResult.playlist.tracks.length; i++) {
+              queue.tracks.add(searchResult.playlist.tracks[i]);
+            }
+          }
+          await interaction.editReply(`📋 **${searchResult.playlist.title}** — ${searchResult.playlist.tracks.length} ${client.t('TRACK_ADDED')}`);
+        } else {
+          await interaction.editReply(`🎶 **${track.title}** ${client.t('NOW_PLAYING')}`);
+        }
+      } catch (err) {
+        console.error('[play] Error:', err);
         await interaction.editReply(`❌ ${client.t('PLAY_ERROR')}`);
       }
       return;
