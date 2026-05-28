@@ -93,14 +93,14 @@ export function buildFilterResponse(
   };
 }
 
-export function applyFilter(queue: GuildQueue, key: string): void {
+export async function applyFilter(queue: GuildQueue, key: string): Promise<void> {
   if (key === 'reset') {
-    queue.filters.ffmpeg.setFilters([]);
+    await queue.filters.ffmpeg.setFilters([]);
     return;
   }
   const effect = EFFECTS[key];
   if (!effect) return;
-  queue.filters.ffmpeg.toggle(effect.filters as any);
+  await queue.filters.ffmpeg.toggle(effect.filters as any);
 }
 
 export async function handleFilterNavigation(
@@ -117,7 +117,7 @@ export async function handleFilterNavigation(
   }
 
   if (action === 'reset') {
-    applyFilter(queue, 'reset');
+    await applyFilter(queue, 'reset');
     const response = buildFilterResponse(client, queue, 1);
     await interaction.update(response);
     return;
@@ -132,7 +132,7 @@ export async function handleFilterNavigation(
   }
 
   // Individual filter toggle
-  applyFilter(queue, action);
+  await applyFilter(queue, action);
   const response = buildFilterResponse(client, queue, 1);
   await interaction.update(response);
 }
