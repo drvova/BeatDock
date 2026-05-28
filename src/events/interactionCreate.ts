@@ -19,30 +19,35 @@ async function handlePlayerInteraction(interaction: ButtonInteraction, action: s
   if (!queue) return;
   if (!(await requireSameVoice(interaction, queue))) return;
 
+  await interaction.deferUpdate();
+
   switch (action) {
     case 'back': {
       const track = await playPrevious(interaction);
-      await interaction.reply(
-        track ? `⏮ ${client.t('PLAYING_PREVIOUS', track.title)}` : `❌ ${client.t('NO_PREVIOUS_TRACKS')}`
-      );
+      if (track) {
+        client.playerController.updatePlayer(interaction.guild!.id);
+        await interaction.followUp({ content: `⏭ ${client.t('PLAYING_PREVIOUS', track.title)}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+      } else {
+        await interaction.followUp({ content: `❌ ${client.t('NO_PREVIOUS_TRACKS')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
       break;
     }
     case 'playpause': {
       if (queue.node.isPaused()) {
         queue.node.resume();
         client.playerController.updatePlayer(interaction.guild!.id);
-        await interaction.reply(`▶ ${client.t('RESUMED')}`);
+        await interaction.followUp({ content: `▶ ${client.t('RESUMED')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
       } else {
         queue.node.pause();
         client.playerController.updatePlayer(interaction.guild!.id);
-        await interaction.reply(`⏸ ${client.t('PAUSED')}`);
+        await interaction.followUp({ content: `⏸ ${client.t('PAUSED')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
       }
       break;
     }
     case 'skip': {
       const autoplaySkip = client.autoplayEnabled.get(interaction.guild!.id) && queue.tracks.size === 0;
       queue.node.skip();
-      await interaction.reply(autoplaySkip ? `⏭ ${client.t('AUTOPLAY_SKIP')}` : `⏭ ${client.t('SKIPPED')}`);
+      await interaction.followUp({ content: autoplaySkip ? `⏭ ${client.t('AUTOPLAY_SKIP')}` : `⏭ ${client.t('SKIPPED')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
       break;
     }
     case 'stop': {
@@ -51,14 +56,14 @@ async function handlePlayerInteraction(interaction: ButtonInteraction, action: s
       client.autoplayEnabled.delete(interaction.guild!.id);
       client.activePlayers.delete(interaction.guild!.id);
       client.updatePresence();
-      await interaction.reply(`⏹ ${client.t('STOPPED')}`);
+      await interaction.followUp({ content: `⏹ ${client.t('STOPPED')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
       break;
     }
     case 'shuffle': {
       shuffleQueue(queue);
       client.autoplayEnabled.delete(interaction.guild!.id);
       client.playerController.updatePlayer(interaction.guild!.id);
-      await interaction.reply(`🔀 ${client.t('SHUFFLED')}`);
+      await interaction.followUp({ content: `🔀 ${client.t('SHUFFLED')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
       break;
     }
     case 'vol_down': {
@@ -66,7 +71,7 @@ async function handlePlayerInteraction(interaction: ButtonInteraction, action: s
       const newVol = Math.max(0, currentVol - 10);
       queue.node.setVolume(newVol);
       client.playerController.updatePlayer(interaction.guild!.id);
-      await interaction.reply(`🔉 Volume: ${newVol}%`);
+      await interaction.followUp({ content: `🔉 Volume: ${newVol}%`, flags: MessageFlags.Ephemeral }).catch(() => {});
       break;
     }
     case 'vol_up': {
@@ -74,7 +79,7 @@ async function handlePlayerInteraction(interaction: ButtonInteraction, action: s
       const newVol = Math.min(150, currentVol + 10);
       queue.node.setVolume(newVol);
       client.playerController.updatePlayer(interaction.guild!.id);
-      await interaction.reply(`🔊 Volume: ${newVol}%`);
+      await interaction.followUp({ content: `🔊 Volume: ${newVol}%`, flags: MessageFlags.Ephemeral }).catch(() => {});
       break;
     }
   }
@@ -89,6 +94,7 @@ async function handleQueueInteraction(interaction: ButtonInteraction, action: st
       if (!queue) return;
       if (!(await requireSameVoice(interaction, queue))) return;
 
+      await interaction.deferUpdate();
       const modeCycle = new Map<number, { next: number; label: string }>([
         [QueueRepeatMode.OFF, { next: QueueRepeatMode.TRACK, label: 'Track' }],
         [QueueRepeatMode.TRACK, { next: QueueRepeatMode.QUEUE, label: 'Queue' }],
@@ -98,24 +104,26 @@ async function handleQueueInteraction(interaction: ButtonInteraction, action: st
       const cycle = modeCycle.get(current) ?? modeCycle.get(QueueRepeatMode.OFF)!;
       queue.setRepeatMode(cycle.next as QueueRepeatMode);
       client.playerController.updatePlayer(interaction.guild!.id);
-      await interaction.reply(`🔁 ${client.t('LOOP_SET', cycle.label)}`);
+      await interaction.followUp({ content: `🔁 ${client.t('LOOP_SET', cycle.label)}`, flags: MessageFlags.Ephemeral }).catch(() => {});
       break;
     }
     case 'list': {
       const queue = await requirePlayer(interaction);
       if (!queue) return;
       const response = createPaginatedQueueResponse(client, queue, 1);
-      await interaction.reply(response);
+      await interaction.reply({ ...response, flags: MessageFlags.Ephemeral });
       break;
     }
     case 'clear': {
       const queue = await requirePlayer(interaction, { requireQueue: true });
       if (!queue) return;
       if (!(await requireSameVoice(interaction, queue))) return;
+
+      await interaction.deferUpdate();
       clearQueue(queue);
       client.autoplayEnabled.delete(interaction.guild!.id);
       client.playerController.updatePlayer(interaction.guild!.id);
-      await interaction.reply(`🗑 ${client.t('QUEUE_CLEARED')}`);
+      await interaction.followUp({ content: `🗑 ${client.t('QUEUE_CLEARED')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
       break;
     }
     case 'prev':
