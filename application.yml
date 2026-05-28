@@ -16,6 +16,8 @@ plugins:
       - MUSIC
       - WEB
       - ANDROID_VR
+    oauth:
+      enabled: true
   lavasrc:
     providers:
       - "ytsearch:\"%ISRC%\""
