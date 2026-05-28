@@ -1,10 +1,9 @@
-import { Events } from 'discord.js';
 import { deployCommands } from '../utils/commandDeployer.js';
 import { generateInviteUrl } from '../utils/inviteUrl.js';
 import type { BotClient } from '../types/client.js';
 
 export default {
-  name: Events.ClientReady,
+  name: 'clientReady',
   once: true,
   async execute(client: BotClient) {
     await deployCommands(client);

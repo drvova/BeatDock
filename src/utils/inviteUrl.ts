@@ -11,5 +11,5 @@ const REQUIRED_PERMISSIONS = [
 
 export function generateInviteUrl(clientId: string): string {
   const permissions = new PermissionsBitField(REQUIRED_PERMISSIONS);
-  return `https://discord.com/oauth2/authorize?client_id=${clientId}&permissions=${permissions.toString()}&scope=bot%20applications.commands`;
+  return `https://discord.com/oauth2/authorize?client_id=${clientId}&permissions=${permissions.bitfield.toString()}&scope=bot%20applications.commands`;
 }
