@@ -6,8 +6,15 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --omit=dev --ignore-engines
+# Install all dependencies (including devDeps for TypeScript compilation)
+RUN npm ci --ignore-engines
+
+# Copy source files
+COPY tsconfig.json ./
+COPY src/ ./src/
+
+# Build TypeScript
+RUN npm run build
 
 # Production stage
 FROM node:22.21-alpine
@@ -21,11 +28,15 @@ RUN addgroup -g 1001 -S nodejs && \
 
 WORKDIR /app
 
-# Copy node modules from builder
-COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
+# Copy package files and install production dependencies only
+COPY package*.json ./
+RUN npm ci --omit=dev --ignore-engines
 
-# Copy application files
-COPY --chown=nodejs:nodejs . .
+# Copy compiled output from builder
+COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
+
+# Copy locales for runtime language loading
+COPY --chown=nodejs:nodejs locales/ ./locales/
 
 # Switch to non-root user
 USER nodejs
@@ -34,4 +45,4 @@ USER nodejs
 ENTRYPOINT ["/sbin/tini", "--"]
 
 # Start the application
-CMD ["node", "src/index.js"]
+CMD ["node", "dist/index.js"]

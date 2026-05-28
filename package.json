@@ -1,10 +1,13 @@
 {
   "name": "beatdock",
-  "version": "2.8.0",
+  "version": "3.0.0",
+  "type": "module",
   "description": "A modern and efficient Discord music bot with slash commands, multi-language support, and Docker deployment.",
-  "main": "src/index.js",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "node src/index.js",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
     "docker:build": "docker build -t beatdock:latest .",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
@@ -43,5 +46,9 @@
     "ffmpeg-static": "^5.2.0",
     "mediaplex": "^0.0.9",
     "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^6.0.3"
   }
 }
