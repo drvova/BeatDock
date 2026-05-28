@@ -1,3 +1,4 @@
+import { MessageFlags } from 'discord.js';
 import { useQueue, QueueRepeatMode } from 'discord-player';
 import type { BotClient, Command } from '../types/client.js';
 
@@ -7,7 +8,7 @@ export default {
     const client = interaction.client as BotClient;
     const queue = useQueue(interaction.guild!.id);
     if (!queue) {
-      await interaction.reply({ content: `❌ ${client.t('NO_PLAYER')}`, ephemeral: true });
+      await interaction.reply({ content: `❌ ${client.t('NO_PLAYER')}`, flags: MessageFlags.Ephemeral });
       return;
     }
 

@@ -1,3 +1,4 @@
+import { MessageFlags } from 'discord.js';
 import { requirePlayer, requireSameVoice } from '../utils/interactionHelpers.js';
 import { playPrevious } from '../utils/PlayerActions.js';
 import type { BotClient, Command } from '../types/client.js';
@@ -12,7 +13,7 @@ export default {
 
     const track = await playPrevious(interaction);
     if (!track) {
-      await interaction.reply({ content: `❌ ${client.t('NO_PREVIOUS_TRACKS')}`, ephemeral: true });
+      await interaction.reply({ content: `❌ ${client.t('NO_PREVIOUS_TRACKS')}`, flags: MessageFlags.Ephemeral });
       return;
     }
 

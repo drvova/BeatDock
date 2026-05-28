@@ -1,5 +1,6 @@
 import {
   Events,
+  MessageFlags,
   type AutocompleteInteraction,
   type ChatInputCommandInteraction,
   type ButtonInteraction,
@@ -187,7 +188,7 @@ async function handleButtonInteraction(interaction: ButtonInteraction): Promise<
   }
 
   // Unknown button
-  await interaction.reply({ content: `❌ ${client.t('UNKNOWN_INTERACTION')}`, ephemeral: true }).catch(() => {});
+  await interaction.reply({ content: `❌ ${client.t('UNKNOWN_INTERACTION')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
 }
 
 async function handleSelectMenuInteraction(interaction: StringSelectMenuInteraction): Promise<void> {
@@ -247,7 +248,7 @@ export default {
       if (err.code === 10062) return; // Unknown interaction — expired
 
       console.error(`[interactionCreate] Error: ${err.message}`);
-      const reply = { content: '❌ An error occurred.', ephemeral: true };
+      const reply = { content: '❌ An error occurred.', flags: MessageFlags.Ephemeral } as const;
       if (interaction.isRepliable()) {
         if (interaction.replied || interaction.deferred) {
           await interaction.followUp(reply).catch(() => {});

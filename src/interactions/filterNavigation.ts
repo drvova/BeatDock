@@ -3,6 +3,7 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  MessageFlags,
 } from 'discord.js';
 import { type GuildQueue } from 'discord-player';
 import type { BotClient } from '../types/client.js';
@@ -112,7 +113,7 @@ export async function handleFilterNavigation(
   const { useQueue } = await import('discord-player');
   const queue = useQueue(interaction.guild!.id);
   if (!queue) {
-    await interaction.reply({ content: `❌ ${client.t('NO_PLAYER')}`, ephemeral: true });
+    await interaction.reply({ content: `❌ ${client.t('NO_PLAYER')}`, flags: MessageFlags.Ephemeral });
     return;
   }
 

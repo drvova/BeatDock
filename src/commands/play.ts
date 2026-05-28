@@ -1,4 +1,4 @@
-import { GuildMember, SlashCommandBuilder, type TextChannel } from 'discord.js';
+import { GuildMember, MessageFlags, SlashCommandBuilder, type TextChannel } from 'discord.js';
 import { useMainPlayer, useQueue } from 'discord-player';
 import { checkInteractionPermission } from '../utils/permissionChecker.js';
 import { getValidVolume } from '../utils/volumeValidator.js';
@@ -17,7 +17,7 @@ export default {
     const member = interaction.member as GuildMember;
     const voiceChannel = member.voice.channel;
     if (!voiceChannel) {
-      await interaction.reply({ content: `❌ ${client.t('JOIN_VOICE_FIRST')}`, ephemeral: true });
+      await interaction.reply({ content: `❌ ${client.t('JOIN_VOICE_FIRST')}`, flags: MessageFlags.Ephemeral });
       return;
     }
     if (!(await checkInteractionPermission(interaction))) return;
@@ -48,7 +48,7 @@ export default {
             selfDeaf: true,
             leaveOnEmpty: true,
             leaveOnEmptyCooldown: 30_000,
-            leaveOnEnd: true,
+            leaveOnEnd: false,
             leaveOnEndCooldown: 30_000,
           },
           requestedBy: interaction.user as any,

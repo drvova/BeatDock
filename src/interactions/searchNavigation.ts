@@ -1,4 +1,4 @@
-import { type TextChannel } from 'discord.js';
+import { MessageFlags, type TextChannel } from 'discord.js';
 import { useMainPlayer, useQueue } from 'discord-player';
 import { createSearchEmbed, createSearchComponents, type PageData } from '../utils/embeds.js';
 import type { BotClient } from '../types/client.js';
@@ -24,12 +24,12 @@ export async function handleSearchNavigation(
 
   const session = client.searchSessions.getSession(resolvedSessionId);
   if (!session) {
-    await interaction.reply({ content: `❌ ${client.t('SEARCH_EXPIRED')}`, ephemeral: true });
+    await interaction.reply({ content: `❌ ${client.t('SEARCH_EXPIRED')}`, flags: MessageFlags.Ephemeral });
     return;
   }
 
   if (interaction.user.id !== session.userId) {
-    await interaction.reply({ content: `❌ ${client.t('NOT_YOUR_SEARCH')}`, ephemeral: true });
+    await interaction.reply({ content: `❌ ${client.t('NOT_YOUR_SEARCH')}`, flags: MessageFlags.Ephemeral });
     return;
   }
 
@@ -61,7 +61,7 @@ export async function handleSearchNavigation(
 
     const track = session.results[trackIndex];
     if (!track) {
-      await interaction.reply({ content: `❌ ${client.t('TRACK_NOT_FOUND')}`, ephemeral: true });
+      await interaction.reply({ content: `❌ ${client.t('TRACK_NOT_FOUND')}`, flags: MessageFlags.Ephemeral });
       return;
     }
 
@@ -82,7 +82,7 @@ export async function handleSearchNavigation(
               selfDeaf: true,
               leaveOnEmpty: true,
               leaveOnEmptyCooldown: 30_000,
-              leaveOnEnd: true,
+              leaveOnEnd: false,
               leaveOnEndCooldown: 30_000,
             },
             requestedBy: interaction.user as any,

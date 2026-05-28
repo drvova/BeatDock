@@ -1,4 +1,4 @@
-import type { ChatInputCommandInteraction, ButtonInteraction, StringSelectMenuInteraction, GuildMember } from 'discord.js';
+import { MessageFlags, type ChatInputCommandInteraction, type ButtonInteraction, type StringSelectMenuInteraction, type GuildMember } from 'discord.js';
 import { useQueue, type GuildQueue } from 'discord-player';
 import type { BotClient } from '../types/client.js';
 
@@ -15,7 +15,7 @@ export async function requirePlayer(
   if (!queue) {
     await interaction.reply({
       content: `❌ ${client.t('NO_PLAYER')}`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return null;
   }
@@ -23,7 +23,7 @@ export async function requirePlayer(
   if (requireQueue && queue.tracks.size === 0 && !queue.currentTrack) {
     await interaction.reply({
       content: `❌ ${client.t('QUEUE_EMPTY')}`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return null;
   }
@@ -41,7 +41,7 @@ export async function requireSameVoice(
   if (!member.voice.channel) {
     await interaction.reply({
       content: `❌ ${client.t('JOIN_VOICE_FIRST')}`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return false;
   }
@@ -49,7 +49,7 @@ export async function requireSameVoice(
   if (queue.channel?.id !== member.voice.channel.id) {
     await interaction.reply({
       content: `❌ ${client.t('ALREADY_IN_VOICE')}`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
     return false;
   }

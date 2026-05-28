@@ -1,4 +1,4 @@
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, SlashCommandBuilder } from 'discord.js';
 import { generateInviteUrl } from '../utils/inviteUrl.js';
 import type { BotClient, Command } from '../types/client.js';
 
@@ -7,7 +7,7 @@ export default {
 
   async execute(interaction) {
     const client = interaction.client as BotClient;
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const inviteUrl = generateInviteUrl(client.user!.id);
 

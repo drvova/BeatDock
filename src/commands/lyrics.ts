@@ -1,4 +1,4 @@
-import { EmbedBuilder } from 'discord.js';
+import { EmbedBuilder, MessageFlags } from 'discord.js';
 import { useQueue } from 'discord-player';
 import type { BotClient, Command } from '../types/client.js';
 
@@ -59,7 +59,7 @@ export default {
       duration = 0;
     } else {
       if (!queue?.currentTrack) {
-        await interaction.reply({ content: `❌ ${client.t('NO_TRACK_PLAYING')}`, ephemeral: true });
+        await interaction.reply({ content: `❌ ${client.t('NO_TRACK_PLAYING')}`, flags: MessageFlags.Ephemeral });
         return;
       }
       const track = queue.currentTrack;

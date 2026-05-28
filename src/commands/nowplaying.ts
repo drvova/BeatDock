@@ -1,3 +1,4 @@
+import { MessageFlags } from 'discord.js';
 import { requirePlayer } from '../utils/interactionHelpers.js';
 import type { BotClient, Command } from '../types/client.js';
 
@@ -10,7 +11,7 @@ export default {
 
     const track = queue.currentTrack;
     if (!track) {
-      await interaction.reply({ content: `❌ ${client.t('NO_TRACK_PLAYING')}`, ephemeral: true });
+      await interaction.reply({ content: `❌ ${client.t('NO_TRACK_PLAYING')}`, flags: MessageFlags.Ephemeral });
       return;
     }
 
