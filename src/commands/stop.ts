@@ -9,6 +9,7 @@ export default {
     if (!queue) return;
     if (!(await requireSameVoice(interaction, queue))) return;
 
+    client.playerController.deletePlayer(interaction.guild!.id);
     queue.delete();
     client.autoplayEnabled.delete(interaction.guild!.id);
     client.activePlayers.delete(interaction.guild!.id);

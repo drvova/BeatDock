@@ -11,9 +11,11 @@ export default {
 
     if (queue.node.isPaused()) {
       queue.node.resume();
+      client.playerController.updatePlayer(interaction.guild!.id);
       await interaction.reply(`▶ ${client.t('RESUMED')}`);
     } else {
       queue.node.pause();
+      client.playerController.updatePlayer(interaction.guild!.id);
       await interaction.reply(`⏸ ${client.t('PAUSED')}`);
     }
   },

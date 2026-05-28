@@ -29,9 +29,11 @@ async function handlePlayerInteraction(interaction: ButtonInteraction, action: s
     case 'playpause': {
       if (queue.node.isPaused()) {
         queue.node.resume();
+        client.playerController.updatePlayer(interaction.guild!.id);
         await interaction.reply(`▶ ${client.t('RESUMED')}`);
       } else {
         queue.node.pause();
+        client.playerController.updatePlayer(interaction.guild!.id);
         await interaction.reply(`⏸ ${client.t('PAUSED')}`);
       }
       break;
@@ -43,6 +45,7 @@ async function handlePlayerInteraction(interaction: ButtonInteraction, action: s
       break;
     }
     case 'stop': {
+      client.playerController.deletePlayer(interaction.guild!.id);
       queue.delete();
       client.autoplayEnabled.delete(interaction.guild!.id);
       client.activePlayers.delete(interaction.guild!.id);
