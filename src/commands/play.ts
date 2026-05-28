@@ -2,6 +2,7 @@ import { GuildMember, MessageFlags, SlashCommandBuilder, type TextChannel } from
 import { useMainPlayer, useQueue } from 'discord-player';
 import { checkInteractionPermission } from '../utils/permissionChecker.js';
 import { getValidVolume } from '../utils/volumeValidator.js';
+import { searchLatency, queueSize } from '../telemetry/index.js';
 import type { BotClient, Command } from '../types/client.js';
 
 export default {
@@ -29,7 +30,9 @@ export default {
     const position = interaction.options.getInteger('position');
 
     const player = useMainPlayer();
+    const searchStart = performance.now();
     const searchResult = await player.search(query, { requestedBy: interaction.user as any });
+    searchLatency.record(performance.now() - searchStart, { source: searchResult.tracks[0]?.source ?? 'unknown' });
 
     if (!searchResult.tracks.length) {
       await interaction.editReply(`❌ ${client.t('TRACK_NOT_FOUND')}`);

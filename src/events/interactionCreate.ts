@@ -11,6 +11,7 @@ import { requirePlayer, requireSameVoice } from '../utils/interactionHelpers.js'
 import { playPrevious, shuffleQueue, clearQueue, createPaginatedQueueResponse } from '../utils/PlayerActions.js';
 import { handleFilterNavigation } from '../interactions/filterNavigation.js';
 import { handleSearchNavigation } from '../interactions/searchNavigation.js';
+import { withSpan, commandCounter, interactionCounter, commandDuration, errorCounter, autocompleteCounter, searchLatency } from '../telemetry/index.js';
 import type { BotClient } from '../types/client.js';
 
 async function handlePlayerInteraction(interaction: ButtonInteraction, action: string): Promise<void> {
@@ -219,7 +220,9 @@ async function handleAutocomplete(interaction: AutocompleteInteraction): Promise
 
   try {
     const player = useMainPlayer();
+    const start = performance.now();
     const result = await player.search(focused, { requestedBy: interaction.user as any });
+    searchLatency.record(performance.now() - start, { source: result.tracks[0]?.source ?? 'unknown' });
     const tracks = result.tracks.slice(0, 10);
 
     await interaction.respond(
@@ -241,20 +244,35 @@ export default {
 
     try {
       if (interaction.isAutocomplete()) {
+        autocompleteCounter.add(1, { command: interaction.commandName });
         await handleAutocomplete(interaction);
       } else if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
         if (!command) return;
-        await command.execute(interaction);
+        const start = performance.now();
+        await withSpan(`command.${interaction.commandName}`, {
+          'interaction.command': interaction.commandName,
+          'interaction.guild': interaction.guildId ?? 'dm',
+          'interaction.user': interaction.user.id,
+        }, async () => {
+          await command.execute(interaction);
+        });
+        const elapsed = performance.now() - start;
+        commandCounter.add(1, { command: interaction.commandName, outcome: 'success' });
+        commandDuration.record(elapsed, { command: interaction.commandName });
       } else if (interaction.isButton()) {
+        interactionCounter.add(1, { type: 'button', customId: interaction.customId });
         await handleButtonInteraction(interaction);
       } else if (interaction.isStringSelectMenu()) {
+        interactionCounter.add(1, { type: 'select', customId: interaction.customId });
         await handleSelectMenuInteraction(interaction);
       }
     } catch (error: unknown) {
       const err = error as { code?: number; message?: string };
       if (err.code === 10062) return; // Unknown interaction — expired
 
+      errorCounter.add(1, { subsystem: 'interaction' });
+      commandCounter.add(1, { command: 'unknown', outcome: 'error' });
       console.error(`[interactionCreate] Error: ${err.message}`);
 
       // Autocomplete interactions only support respond() — skip reply/followUp

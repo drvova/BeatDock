@@ -1,5 +1,6 @@
 import { Events, type GuildMember } from 'discord.js';
 import { useQueue } from 'discord-player';
+import { voiceDisconnectCounter, activePlayers } from '../telemetry/index.js';
 import type { BotClient } from '../types/client.js';
 
 const EMPTY_CHANNEL_TIMEOUT = parseInt(process.env.EMPTY_CHANNEL_DESTROY_MS || '30000', 10);
@@ -17,6 +18,8 @@ export default {
       if (queue) queue.delete();
       client.playerController.deletePlayer(guild.id);
       client.activePlayers.delete(guild.id);
+      activePlayers.add(-1);
+      voiceDisconnectCounter.add(1, { reason: 'bot_disconnected' });
       client.autoplayEnabled.delete(guild.id);
       const timeout = client._emptyChannelTimeouts.get(guild.id);
       if (timeout) {
@@ -49,6 +52,8 @@ export default {
               q.delete();
               client.playerController.deletePlayer(guild.id);
               client.activePlayers.delete(guild.id);
+              activePlayers.add(-1);
+              voiceDisconnectCounter.add(1, { reason: 'empty_channel' });
               client.autoplayEnabled.delete(guild.id);
               client.updatePresence();
             }

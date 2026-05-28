@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import './telemetry/instrumentation.js';
 import { Client, GatewayIntentBits, ActivityType } from 'discord.js';
 import { Player, useHistory, useQueue, type Track } from 'discord-player';
 import { DefaultExtractors } from '@discord-player/extractor';
@@ -10,6 +11,7 @@ import { registerEvents } from './handlers/eventHandler.js';
 import { findAutoplayTracks } from './utils/autoplay.js';
 import { info as logInfo, warn as logWarn, error as logError, track as logTrack } from './utils/logger.js';
 import { getValidVolume } from './utils/volumeValidator.js';
+import { withSpan, trackPlayCounter, trackSkipCounter, errorCounter, autoplayCounter, activePlayers, voiceDisconnectCounter } from './telemetry/index.js';
 import type { BotClient } from './types/client.js';
 
 
@@ -84,6 +86,8 @@ function registerPlayerEvents(client: BotClient): void {
     }
 
     client.activePlayers.set(queue.guild.id, { voiceChannelId: queue.channel?.id ?? '' });
+    activePlayers.add(1);
+    trackPlayCounter.add(1, { guild: queue.guild.id, source: track.source ?? 'unknown' });
     client.playerController.sendPlayer(queue.metadata as import('discord.js').TextChannel, queue.guild.id, track);
     client.updatePresence();
     logTrack('track', `Now playing: ${track.title} by ${track.author} [${queue.guild.name}]`);
@@ -99,6 +103,8 @@ function registerPlayerEvents(client: BotClient): void {
 
   player.events.on('emptyQueue', async (queue) => {
     if (!client.autoplayEnabled.get(queue.guild.id)) {
+      activePlayers.add(-1);
+      voiceDisconnectCounter.add(1, { reason: 'queue_empty' });
       cleanupGuildPlayer(client, queue.guild.id);
       return;
     }
@@ -111,13 +117,19 @@ function registerPlayerEvents(client: BotClient): void {
       const history = useHistory(queue.guild.id);
       const lastPlayed = history?.previousTrack ?? undefined;
       if (!lastPlayed) {
+        activePlayers.add(-1);
+        voiceDisconnectCounter.add(1, { reason: 'no_history' });
         cleanupGuildPlayer(client, queue.guild.id);
         return;
       }
 
       try {
-        const tracks = await findAutoplayTracks(client.discordPlayer, queue.guild.id, lastPlayed);
+        const tracks = await withSpan('autoplay.findTracks', { guild: queue.guild.id }, async () => {
+          return findAutoplayTracks(client.discordPlayer, queue.guild.id, lastPlayed);
+        });
         if (!tracks?.length) {
+          activePlayers.add(-1);
+          voiceDisconnectCounter.add(1, { reason: 'autoplay_empty' });
           cleanupGuildPlayer(client, queue.guild.id);
           return;
         }
@@ -126,8 +138,10 @@ function registerPlayerEvents(client: BotClient): void {
         if (!q) return;
         for (const t of tracks) q.tracks.add(t);
         if (!q.isPlaying()) q.node.play();
+        autoplayCounter.add(1, { guild: queue.guild.id, count: tracks.length });
         logTrack('track', `Autoplay added ${tracks.length} track(s) [${q.guild.name}]`);
       } catch (err) {
+        errorCounter.add(1, { subsystem: 'autoplay' });
         logError('autoplay', `Autoplay error: ${err}`);
         cleanupGuildPlayer(client, queue.guild.id);
       }
@@ -137,14 +151,17 @@ function registerPlayerEvents(client: BotClient): void {
   });
 
   player.events.on('playerSkip', (queue, track) => {
+    trackSkipCounter.add(1, { guild: queue.guild.id });
     logTrack('track', `Track skipped: ${track.title} [${queue.guild.name}]`);
   });
 
   player.events.on('playerError', (queue, error, track) => {
+    errorCounter.add(1, { subsystem: 'player' });
     logError('track', `Player error for "${track.title}": ${error.message} [${queue.guild.name}]`);
   });
 
   player.events.on('error', (_queue, error) => {
+    errorCounter.add(1, { subsystem: 'player' });
     logError('player', `Player error: ${error.message}`);
   });
 }
@@ -162,19 +179,23 @@ function setupShutdown(client: BotClient): void {
 }
 
 async function bootstrap(): Promise<void> {
-  const client = createClient();
-  await setupPlayer(client);
-  registerPlayerEvents(client);
-  await loadCommands(client);
-  await registerEvents(client);
-  setupShutdown(client);
+  await withSpan('bootstrap', undefined, async (span) => {
+    const client = createClient();
+    await setupPlayer(client);
+    registerPlayerEvents(client);
+    await loadCommands(client);
+    await registerEvents(client);
+    setupShutdown(client);
 
-  client.once('clientReady', () => {
-    logInfo('ready', `Logged in as ${client.user?.tag}`);
-    client.updatePresence();
+    client.once('clientReady', () => {
+      span.setAttribute('bot.tag', client.user?.tag ?? 'unknown');
+      span.setAttribute('bot.guilds', client.guilds.cache.size);
+      logInfo('ready', `Logged in as ${client.user?.tag}`);
+      client.updatePresence();
+    });
+
+    await client.login(TOKEN);
   });
-
-  await client.login(TOKEN);
 }
 
 bootstrap().catch(err => {
