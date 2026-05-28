@@ -16,12 +16,12 @@ export default {
 
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle('👋 Thanks for adding BeatDock!')
+      .setTitle('Thanks for adding VovaPlayer!')
       .setDescription('Use `/play <song>` to start playing music.')
       .setTimestamp();
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setLabel('GitHub').setURL('https://github.com/BeatDock/BeatDock').setStyle(ButtonStyle.Link),
+      new ButtonBuilder().setLabel('GitHub').setURL('https://github.com/lazaroagomez/BeatDock').setStyle(ButtonStyle.Link),
     );
 
     channel.send({ embeds: [embed], components: [row] }).catch(() => {});

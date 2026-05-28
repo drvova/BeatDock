@@ -13,7 +13,7 @@ export default {
 
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle('Invite BeatDock')
+      .setTitle('Invite VovaPlayer')
       .setDescription(`[Click here to invite me!](${inviteUrl})`)
       .setTimestamp();
 

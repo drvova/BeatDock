@@ -1,14 +1,13 @@
 services:
   bot:
-    container_name: beatdock
-    image: ghcr.io/lazaroagomez/beatdock:latest
+    container_name: vovaplayer
+    image: ghcr.io/lazaroagomez/vovaplayer:latest
     build:
       context: .
       dockerfile: Dockerfile
     networks:
-      - beatdock-network
-    env_file: .env
+      - vovaplayer-network
 
 networks:
-  beatdock-network:
-    name: beatdock_network
+  vovaplayer-network:
+    name: vovaplayer_network

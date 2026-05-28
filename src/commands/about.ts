@@ -42,7 +42,7 @@ export default {
 
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle('BeatDock')
+      .setTitle('VovaPlayer')
       .setDescription(`Version **${version}**`)
       .addFields(
         { name: 'Servers', value: `${client.guilds.cache.size}`, inline: true },
@@ -54,7 +54,7 @@ export default {
       .setTimestamp();
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setLabel('GitHub').setURL('https://github.com/BeatDock/BeatDock').setStyle(ButtonStyle.Link),
+      new ButtonBuilder().setLabel('GitHub').setURL('https://github.com/lazaroagomez/BeatDock').setStyle(ButtonStyle.Link),
       new ButtonBuilder().setLabel('Invite').setURL(generateInviteUrl(client.user!.id)).setStyle(ButtonStyle.Link),
     );
 

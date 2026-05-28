@@ -1,5 +1,5 @@
 {
-  "name": "beatdock",
+  "name": "vovaplayer",
   "version": "3.0.0",
   "type": "module",
   "description": "A modern and efficient Discord music bot with slash commands, multi-language support, and Docker deployment.",
@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
-    "docker:build": "docker build -t beatdock:latest .",
+    "docker:build": "docker build -t vovaplayer:latest .",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f"
