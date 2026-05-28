@@ -169,7 +169,7 @@ async function bootstrap(): Promise<void> {
   await registerEvents(client);
   setupShutdown(client);
 
-  client.once('ready', () => {
+  client.once('clientReady', () => {
     logInfo('ready', `Logged in as ${client.user?.tag}`);
     client.updatePresence();
   });
