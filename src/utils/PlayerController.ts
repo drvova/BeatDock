@@ -64,6 +64,8 @@ export class PlayerController {
 
   createQueueRow(): ActionRowBuilder<ButtonBuilder> {
     return new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId('player_vol_down').setEmoji('🔉').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('player_vol_up').setEmoji('🔊').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('queue_loop').setEmoji('🔁').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('queue_list').setEmoji('📋').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('queue_clear').setEmoji('🗑').setStyle(ButtonStyle.Danger),

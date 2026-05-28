@@ -57,6 +57,22 @@ async function handlePlayerInteraction(interaction: ButtonInteraction, action: s
       await interaction.reply(`🔀 ${client.t('SHUFFLED')}`);
       break;
     }
+    case 'vol_down': {
+      const currentVol = queue.node.volume;
+      const newVol = Math.max(0, currentVol - 10);
+      queue.node.setVolume(newVol);
+      client.playerController.updatePlayer(interaction.guild!.id);
+      await interaction.reply(`🔉 Volume: ${newVol}%`);
+      break;
+    }
+    case 'vol_up': {
+      const currentVol = queue.node.volume;
+      const newVol = Math.min(150, currentVol + 10);
+      queue.node.setVolume(newVol);
+      client.playerController.updatePlayer(interaction.guild!.id);
+      await interaction.reply(`🔊 Volume: ${newVol}%`);
+      break;
+    }
   }
 }
 
