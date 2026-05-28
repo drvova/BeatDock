@@ -213,7 +213,7 @@ async function handleSelectMenuInteraction(interaction: StringSelectMenuInteract
 async function handleAutocomplete(interaction: AutocompleteInteraction): Promise<void> {
   const focused = interaction.options.getFocused();
   if (!focused) {
-    await interaction.respond([]);
+    await interaction.respond([]).catch(() => {});
     return;
   }
 
@@ -229,7 +229,7 @@ async function handleAutocomplete(interaction: AutocompleteInteraction): Promise
       })),
     );
   } catch {
-    await interaction.respond([]);
+    await interaction.respond([]).catch(() => {});
   }
 }
 
@@ -256,12 +256,16 @@ export default {
       if (err.code === 10062) return; // Unknown interaction — expired
 
       console.error(`[interactionCreate] Error: ${err.message}`);
-      const reply = { content: '❌ An error occurred.', flags: MessageFlags.Ephemeral } as const;
-      if (interaction.isRepliable()) {
-        if (interaction.replied || interaction.deferred) {
-          await interaction.followUp(reply).catch(() => {});
-        } else {
-          await interaction.reply(reply).catch(() => {});
+
+      // Autocomplete interactions only support respond() — skip reply/followUp
+      if (!interaction.isAutocomplete()) {
+        const reply = { content: '❌ An error occurred.', flags: MessageFlags.Ephemeral } as const;
+        if (interaction.isRepliable()) {
+          if (interaction.replied || interaction.deferred) {
+            await interaction.followUp(reply).catch(() => {});
+          } else {
+            await interaction.reply(reply).catch(() => {});
+          }
         }
       }
     }
