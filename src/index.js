@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
 const { Player, useHistory, useQueue } = require('discord-player');
-const { DefaultExtractors } = require('@discord-player/extractor');
+require('@discord-player/extractor');
 const LanguageManager = require('./LanguageManager');
 const PlayerController = require('./utils/PlayerController');
 const searchSessions = require('./utils/searchSessions');
@@ -58,7 +58,7 @@ function cleanupGuildPlayer(client, guildId) {
 
 async function setupPlayer(client) {
     const player = new Player(client);
-    await player.extractors.loadMulti(DefaultExtractors);
+    await player.extractors.loadDefault();
 
     player.nodes.defaults = {
         ...player.nodes.defaults,
