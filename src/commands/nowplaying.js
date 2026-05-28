@@ -1,44 +1,22 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const logger = require('../utils/logger');
+const { requirePlayer } = require('../utils/interactionHelpers');
 
 module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('nowplaying')
-        .setDescription('Shows information about the currently playing song.'),
+    data: { name: 'nowplaying', description: 'Show the currently playing track' },
     async execute(interaction) {
-        const { client } = interaction;
-        const { requirePlayer } = require('../utils/interactionHelpers');
+        const { client, guild } = interaction;
+        const queue = await requirePlayer(interaction);
+        if (!queue) return;
 
-        const player = await requirePlayer(interaction);
-        if (!player) return;
-
-        logger.cmd(`/nowplaying by ${interaction.user.tag} in #${interaction.channel.name} (Guild: ${interaction.guild.name})`);
-
-        if (!player.playing || !player.queue.current) {
-            return interaction.reply({ 
-                content: client.languageManager.get(client.defaultLanguage, 'NOTHING_PLAYING'), 
-                flags: MessageFlags.Ephemeral
-            });
+        const track = queue.currentTrack;
+        if (!track) {
+            return interaction.reply({ content: client.t('NO_TRACK_PLAYING'), flags: 64 });
         }
 
-        const track = player.queue.current;
-
-        const embed = client.playerController.createPlayerEmbed(player, track);
-
-        // Add loop status to nowplaying
-        if (player.repeatMode && player.repeatMode !== 'off') {
-            const loopIcon = player.repeatMode === 'track' ? '🔂' : '🔁';
-            const loopText = player.repeatMode === 'track' 
-                ? client.languageManager.get(client.defaultLanguage, 'LOOP_STATUS_TRACK')
-                : client.languageManager.get(client.defaultLanguage, 'LOOP_STATUS_QUEUE');
-            
-            embed.addFields({
-                name: client.languageManager.get(client.defaultLanguage, 'LOOP_STATUS'),
-                value: `${loopIcon} ${loopText}`,
-                inline: true
-            });
+        const embed = client.playerController.createPlayerEmbed(guild.id, track);
+        if (!embed) {
+            return interaction.reply({ content: client.t('NO_TRACK_PLAYING'), flags: 64 });
         }
 
-        return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral});
+        await interaction.reply({ embeds: [embed], flags: 64 });
     },
-}; 
+};

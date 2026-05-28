@@ -1,38 +1,32 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { requirePlayer } = require('../utils/interactionHelpers');
-const logger = require('../utils/logger');
+const { ApplicationCommandOptionType } = require('discord.js');
+const { requirePlayer, requireSameVoice } = require('../utils/interactionHelpers');
+const { getValidVolume } = require('../utils/volumeValidator');
 
 module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('volume')
-        .setDescription('Adjusts the playback volume.')
-        .addIntegerOption(option =>
-            option.setName('level')
-                .setDescription('Volume level (1-100)')
-                .setRequired(true)
-                .setMinValue(1)
-                .setMaxValue(100)),
-    async execute(interaction) {
-        const { client, options } = interaction;
-
-        const player = await requirePlayer(interaction);
-        if (!player) return;
-
-        const volume = options.getInteger('level');
-
-        logger.cmd(`/volume ${volume} by ${interaction.user.tag} in #${interaction.channel.name} (Guild: ${interaction.guild.name})`);
-
-        // Set the volume
-        player.setVolume(volume);
-
-        // Update the player display
-        setTimeout(() => {
-            client.playerController.updatePlayer(interaction.guild.id);
-        }, 100);
-
-        return interaction.reply({ 
-            content: client.languageManager.get(client.defaultLanguage, 'VOLUME_SET', volume),
-            flags: MessageFlags.Ephemeral
-        });
+    data: {
+        name: 'volume',
+        description: 'Set the playback volume',
+        options: [
+            {
+                name: 'level',
+                type: ApplicationCommandOptionType.Integer,
+                description: 'Volume level (0-150)',
+                required: true,
+                min_value: 0,
+                max_value: 150,
+            },
+        ],
     },
-}; 
+    async execute(interaction) {
+        const { client } = interaction;
+        const queue = await requirePlayer(interaction);
+        if (!queue) return;
+        if (!(await requireSameVoice(interaction, queue))) return;
+
+        const volume = getValidVolume(interaction.options.getInteger('level'), client);
+        queue.node.setVolume(volume);
+
+        await interaction.reply({ content: client.t('VOLUME_SET', volume), flags: 64 });
+        await client.playerController.updatePlayer(interaction.guild.id);
+    },
+};

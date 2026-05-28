@@ -11,9 +11,6 @@ module.exports = {
 
         await deployCommands(client);
 
-        await client.lavalink.init({ ...client.user });
-        logger.info('Lavalink initialized');
-
         const inviteUrl = generateInviteUrl(client.user.id);
         logger.info(`Invite URL: ${inviteUrl}`);
 

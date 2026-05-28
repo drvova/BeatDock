@@ -16,6 +16,4 @@ module.exports = (client) => {
         }
     }
 
-    // Lavalink raw data handler
-    client.on("raw", (d) => client.lavalink.sendRawData(d));
 }; 

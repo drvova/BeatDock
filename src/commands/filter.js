@@ -1,21 +1,13 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const { requirePlayer } = require('../utils/interactionHelpers');
 const { buildFilterResponse } = require('../interactions/filterNavigation');
-const logger = require('../utils/logger');
 
 module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('filter')
-        .setDescription('Apply audio effects and EQ presets to the music.'),
+    data: { name: 'filter', description: 'Apply audio filters' },
     async execute(interaction) {
-        const { client } = interaction;
+        const queue = await requirePlayer(interaction);
+        if (!queue) return;
 
-        const player = await requirePlayer(interaction);
-        if (!player) return;
-
-        logger.cmd(`/filter by ${interaction.user.tag} in #${interaction.channel.name} (Guild: ${interaction.guild.name})`);
-
-        const response = buildFilterResponse(client, player, 1);
-        return interaction.reply({ ...response, flags: MessageFlags.Ephemeral });
+        const response = buildFilterResponse(interaction.client, queue, 1);
+        await interaction.reply({ ...response, flags: 64 });
     },
 };

@@ -1,37 +1,20 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { requirePlayer } = require('../utils/interactionHelpers');
+const { requirePlayer, requireSameVoice } = require('../utils/interactionHelpers');
 const { shuffleQueue } = require('../utils/PlayerActions');
-const logger = require('../utils/logger');
 
 module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('shuffle')
-        .setDescription('Shuffles the queue.'),
+    data: { name: 'shuffle', description: 'Shuffle the queue' },
     async execute(interaction) {
-        const { client } = interaction;
+        const { client, guild } = interaction;
+        const queue = await requirePlayer(interaction, { requireQueue: true });
+        if (!queue) return;
+        if (!(await requireSameVoice(interaction, queue))) return;
 
-        const player = await requirePlayer(interaction, { requireQueue: true });
-        if (!player) return;
+        shuffleQueue(queue);
 
-        logger.cmd(`/shuffle by ${interaction.user.tag} in #${interaction.channel.name} (Guild: ${interaction.guild.name})`);
-
-        if (client.autoplayEnabled.get(interaction.guild.id)) {
-            return interaction.reply({
-                content: client.languageManager.get(client.defaultLanguage, 'AUTOPLAY_BLOCKS_ACTION'),
-                flags: MessageFlags.Ephemeral,
-            });
+        if (client.autoplayEnabled.get(guild.id)) {
+            client.autoplayEnabled.set(guild.id, false);
         }
 
-        shuffleQueue(player);
-
-        // Update the player display
-        setTimeout(() => {
-            client.playerController.updatePlayer(interaction.guild.id);
-        }, 100);
-
-        return interaction.reply({ 
-            content: client.languageManager.get(client.defaultLanguage, 'QUEUE_SHUFFLED'),
-            flags: MessageFlags.Ephemeral
-        });
+        await interaction.reply({ content: client.t('SHUFFLED'), flags: 64 });
     },
-}; 
+};

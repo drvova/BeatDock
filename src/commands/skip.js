@@ -1,34 +1,19 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { requirePlayer } = require('../utils/interactionHelpers');
-const logger = require('../utils/logger');
+const { requirePlayer, requireSameVoice } = require('../utils/interactionHelpers');
 
 module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('skip')
-        .setDescription('Skips the current song.'),
+    data: { name: 'skip', description: 'Skip the current track' },
     async execute(interaction) {
-        const { client } = interaction;
-        const lang = client.defaultLanguage;
+        const { client, guild } = interaction;
+        const queue = await requirePlayer(interaction, { requireQueue: false });
+        if (!queue) return;
+        if (!(await requireSameVoice(interaction, queue))) return;
 
-        const player = await requirePlayer(interaction);
-        if (!player) return;
+        const autoplaySkip = client.autoplayEnabled.get(guild.id) && queue.tracks.size === 0;
+        queue.node.skip();
 
-        logger.cmd(`/skip by ${interaction.user.tag} in #${interaction.channel.name} (Guild: ${interaction.guild.name})`);
-
-        const autoplayOn = client.autoplayEnabled.get(interaction.guild.id) || false;
-        if (player.queue.tracks.length === 0 && !autoplayOn) {
-            return interaction.reply({ content: client.languageManager.get(lang, 'QUEUE_EMPTY'), flags: MessageFlags.Ephemeral });
-        }
-
-        if (player.queue.tracks.length === 0 && autoplayOn) {
-            await player.skip(0, false);
-        } else {
-            await player.skip();
-        }
-
-        return interaction.reply({
-            content: client.languageManager.get(lang, 'SONG_SKIPPED'),
-            flags: MessageFlags.Ephemeral
+        await interaction.reply({
+            content: autoplaySkip ? client.t('AUTOPLAY_SKIP') : client.t('SKIPPED'),
+            flags: 64,
         });
     },
-}; 
+};

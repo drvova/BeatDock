@@ -1,56 +1,26 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const logger = require('../utils/logger');
+const { RepeatMode } = require('discord-player');
+const { requirePlayer, requireSameVoice } = require('../utils/interactionHelpers');
 
 module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('loop')
-        .setDescription('Toggle loop mode for the current track or queue.'),
+    data: { name: 'loop', description: 'Set the loop mode' },
     async execute(interaction) {
         const { client } = interaction;
-        const { requirePlayer } = require('../utils/interactionHelpers');
+        const queue = await requirePlayer(interaction);
+        if (!queue) return;
+        if (!(await requireSameVoice(interaction, queue))) return;
 
-        const player = await requirePlayer(interaction);
-        if (!player) return;
+        const modeMap = {
+            [RepeatMode.OFF]: { next: RepeatMode.TRACK, label: 'LOOP_TRACK' },
+            [RepeatMode.TRACK]: { next: RepeatMode.QUEUE, label: 'LOOP_QUEUE' },
+            [RepeatMode.QUEUE]: { next: RepeatMode.OFF, label: 'LOOP_OFF' },
+        };
 
-        logger.cmd(`/loop by ${interaction.user.tag} in #${interaction.channel.name} (Guild: ${interaction.guild.name})`);
+        const current = queue.repeatMode;
+        const cycle = modeMap[current] || modeMap[RepeatMode.OFF];
 
-        if (client.autoplayEnabled.get(interaction.guild.id)) {
-            return interaction.reply({
-                content: client.languageManager.get(client.defaultLanguage, 'AUTOPLAY_BLOCKS_ACTION'),
-                flags: MessageFlags.Ephemeral,
-            });
-        }
+        queue.setRepeatMode(cycle.next);
 
-        // Cycle through loop modes: off -> track -> queue -> off
-        let newMode;
-        let modeMessage;
-        
-        switch (player.repeatMode) {
-            case 'off':
-                newMode = 'track';
-                modeMessage = client.languageManager.get(client.defaultLanguage, 'LOOP_TRACK_ENABLED');
-                break;
-            case 'track':
-                newMode = 'queue';
-                modeMessage = client.languageManager.get(client.defaultLanguage, 'LOOP_QUEUE_ENABLED');
-                break;
-            case 'queue':
-                newMode = 'off';
-                modeMessage = client.languageManager.get(client.defaultLanguage, 'LOOP_DISABLED');
-                break;
-            default:
-                newMode = 'track';
-                modeMessage = client.languageManager.get(client.defaultLanguage, 'LOOP_TRACK_ENABLED');
-        }
-
-        // Set the new repeat mode
-        player.setRepeatMode(newMode);
-
-        // Update the player display
-        setTimeout(() => {
-            client.playerController.updatePlayer(interaction.guild.id);
-        }, 100);
-
-        return interaction.reply({ content: modeMessage, flags: MessageFlags.Ephemeral });
+        await interaction.reply({ content: client.t(cycle.label), flags: 64 });
+        await client.playerController.updatePlayer(interaction.guild.id);
     },
-}; 
+};

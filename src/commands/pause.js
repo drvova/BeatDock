@@ -1,31 +1,19 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { requirePlayer } = require('../utils/interactionHelpers');
-const logger = require('../utils/logger');
+const { requirePlayer, requireSameVoice } = require('../utils/interactionHelpers');
 
 module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('pause')
-        .setDescription('Pauses or resumes playback.'),
+    data: { name: 'pause', description: 'Pause or resume playback' },
     async execute(interaction) {
         const { client } = interaction;
+        const queue = await requirePlayer(interaction);
+        if (!queue) return;
+        if (!(await requireSameVoice(interaction, queue))) return;
 
-        const player = await requirePlayer(interaction);
-        if (!player) return;
-
-        logger.cmd(`/pause by ${interaction.user.tag} in #${interaction.channel.name} (Guild: ${interaction.guild.name})`);
-
-        if (player.paused) {
-            await player.resume();
-            return interaction.reply({ 
-                content: client.languageManager.get(client.defaultLanguage, 'RESUMED'), 
-                flags: MessageFlags.Ephemeral
-            });
+        if (queue.node.isPaused()) {
+            queue.node.resume();
+            await interaction.reply({ content: client.t('RESUMED'), flags: 64 });
         } else {
-            await player.pause();
-            return interaction.reply({ 
-                content: client.languageManager.get(client.defaultLanguage, 'PAUSED'), 
-                flags: MessageFlags.Ephemeral
-            });
+            queue.node.pause();
+            await interaction.reply({ content: client.t('PAUSED'), flags: 64 });
         }
     },
-}; 
+};

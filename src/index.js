@@ -1,10 +1,9 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, ActivityType } = require('discord.js');
-const { LavalinkManager } = require('lavalink-client');
+const { Player, useHistory, useQueue } = require('discord-player');
+const { DefaultExtractors } = require('@discord-player/extractor');
 const LanguageManager = require('./LanguageManager');
 const PlayerController = require('./utils/PlayerController');
-const LavalinkConnectionManager = require('./utils/LavalinkConnectionManager');
-const PublicNodeProvider = require('./utils/PublicNodeProvider');
 const searchSessions = require('./utils/searchSessions');
 const { findAutoplayTracks } = require('./utils/autoplay');
 const loadCommands = require('./handlers/commandHandler');
@@ -13,50 +12,8 @@ const logger = require('./utils/logger');
 
 const AUTOPLAY_TIMEOUT_MS = 5000;
 const TRACK_END_CLEANUP_DELAY_MS = 500;
-
-function isLocalLavalinkConfigured() {
-    const host = process.env.LAVALINK_HOST;
-    const port = process.env.LAVALINK_PORT;
-    const password = process.env.LAVALINK_PASSWORD;
-    return Boolean(host && host.trim() && port && port.trim() && password && password.trim());
-}
-
-async function getInitialNodes() {
-    if (isLocalLavalinkConfigured()) {
-        logger.info('Using local Lavalink server');
-        return {
-            mode: 'local',
-            nodes: [{
-                host: process.env.LAVALINK_HOST,
-                port: parseInt(process.env.LAVALINK_PORT, 10),
-                authorization: process.env.LAVALINK_PASSWORD,
-                id: 'main-node',
-                reconnectTimeout: 10000,
-                reconnectTries: 3,
-            }],
-            provider: null,
-        };
-    }
-
-    logger.info('No local Lavalink configured, fetching public Lavalink servers...');
-    const provider = new PublicNodeProvider();
-    const success = await provider.fetchNodes();
-
-    if (!success || !provider.hasNodes()) {
-        throw new Error('Failed to fetch public Lavalink nodes. Cannot start without a Lavalink server.');
-    }
-
-    provider.startAutoRefresh();
-    const firstNode = provider.getNextNode();
-    logger.warn('Using public Lavalink servers — search queries and track requests are sent to third-party servers');
-    logger.info(`Selected public node: ${firstNode.secure ? 'wss' : 'ws'}://${firstNode.host}:${firstNode.port}`);
-
-    return {
-        mode: 'public',
-        nodes: [firstNode],
-        provider,
-    };
-}
+const DEFAULT_VOLUME = parseInt(process.env.DEFAULT_VOLUME || '80', 10);
+const QUEUE_EMPTY_DESTROY_MS = parseInt(process.env.QUEUE_EMPTY_DESTROY_MS || '30000', 10);
 
 function createClient() {
     const client = new Client({
@@ -99,99 +56,68 @@ function cleanupGuildPlayer(client, guildId) {
     client.updatePresence();
 }
 
-async function setupLavalink(client) {
-    const { mode, nodes, provider } = await getInitialNodes();
-    client.lavalinkMode = mode;
-    client.publicNodeProvider = provider;
+async function setupPlayer(client) {
+    const player = new Player(client);
+    await player.extractors.loadMulti(DefaultExtractors);
 
-    client.lavalink = new LavalinkManager({
-        nodes,
-        sendToShard: (guildId, payload) => {
-            const guild = client.guilds.cache.get(guildId);
-            if (guild) guild.shard.send(payload);
-        },
-        autoSkip: true,
-        playerOptions: {
-            clientBasedPositionUpdateInterval: 1000,
-            defaultSearchPlatform: process.env.DEFAULT_SEARCH_PLATFORM || "ytmsearch",
-            onEmptyQueue: {
-                destroyAfterMs: parseInt(process.env.QUEUE_EMPTY_DESTROY_MS || "30000", 10),
-                autoPlayFunction: async (player, lastPlayedTrack) => {
-                    if (!client.autoplayEnabled.get(player.guildId)) return;
+    player.nodes.defaults = {
+        ...player.nodes.defaults,
+        metadata: null,
+        selfDeaf: true,
+        volume: DEFAULT_VOLUME,
+        leaveOnEmpty: true,
+        leaveOnEmptyCooldown: QUEUE_EMPTY_DESTROY_MS,
+        leaveOnEnd: true,
+        leaveOnEndCooldown: QUEUE_EMPTY_DESTROY_MS,
+    };
 
-                    try {
-                        const tracks = await findAutoplayTracks(player, lastPlayedTrack);
-                        if (!client.autoplayEnabled.get(player.guildId)) return;
-                        if (!tracks.length) return;
-
-                        for (const track of tracks) {
-                            track.userData = { autoplay: true };
-                        }
-                        await player.queue.add(tracks);
-                    } catch (err) {
-                        logger.error('Autoplay failed:', err);
-                    }
-                },
-            }
-        },
-    });
-
-    client.lavalinkConnectionManager = new LavalinkConnectionManager(client);
-    client.lavalinkConnectionManager.initialize();
-
-    client.lavalink.nodeManager.on('connect', (node) => {
-        client.lavalinkConnectionManager.onConnect(node);
-    });
-
-    client.lavalink.nodeManager.on('error', (node, error) => {
-        client.lavalinkConnectionManager.onError(node, error);
-    });
-
-    client.lavalink.nodeManager.on('disconnect', (node, reason) => {
-        client.lavalinkConnectionManager.onDisconnect(node, reason);
-    });
+    client.discordPlayer = player;
+    logger.info('discord-player initialized with extractors loaded');
 }
 
-function registerLavalinkEvents(client) {
+function registerPlayerEvents(client) {
+    const player = client.discordPlayer;
     const queueEndTimeouts = new Map();
 
-    client.lavalink.on("trackStart", (player, track) => {
-        if (queueEndTimeouts.has(player.guildId)) {
-            clearTimeout(queueEndTimeouts.get(player.guildId));
-            queueEndTimeouts.delete(player.guildId);
+    player.events.on('playerStart', (queue, track) => {
+        const guildId = queue.guild.id;
+
+        if (queueEndTimeouts.has(guildId)) {
+            clearTimeout(queueEndTimeouts.get(guildId));
+            queueEndTimeouts.delete(guildId);
         }
 
-        if (!client.autoplayEnabled.has(player.guildId)) {
+        if (!client.autoplayEnabled.has(guildId)) {
             const autoplayDefault = process.env.AUTOPLAY_DEFAULT === 'true';
-            client.autoplayEnabled.set(player.guildId, autoplayDefault);
+            client.autoplayEnabled.set(guildId, autoplayDefault);
         }
 
-        client.playerController.updatePlayer(player.guildId);
+        client.playerController.updatePlayer(guildId);
 
-        client.activePlayers.set(player.guildId, {
-            title: track.info?.title,
-            startedAt: Date.now()
+        client.activePlayers.set(guildId, {
+            title: track.title,
+            startedAt: Date.now(),
         });
         client.updatePresence();
 
-        logger.track(`Now playing: ${track.info?.title} — ${track.info?.author}`);
+        logger.track(`Now playing: ${track.title} — ${track.author}`);
     });
 
-    client.lavalink.on("trackEnd", (player, track, reason) => {
-        logger.debug(`Track ended: ${track.info?.title} (reason: ${reason?.reason || reason})`);
-        if (reason === "replaced" || reason === "stopped") return;
+    player.events.on('playerFinish', (queue, track) => {
+        logger.debug(`Track ended: ${track.title}`);
 
         setTimeout(() => {
-            if (player.queue.current) {
-                client.playerController.updatePlayer(player.guildId);
-            } else if (!client.autoplayEnabled.get(player.guildId)) {
-                cleanupGuildPlayer(client, player.guildId);
+            const currentQueue = useQueue(queue.guild.id);
+            if (currentQueue?.currentTrack) {
+                client.playerController.updatePlayer(queue.guild.id);
+            } else if (!client.autoplayEnabled.get(queue.guild.id)) {
+                cleanupGuildPlayer(client, queue.guild.id);
             }
         }, TRACK_END_CLEANUP_DELAY_MS);
     });
 
-    client.lavalink.on("queueEnd", (player) => {
-        const guildId = player.guildId;
+    player.events.on('emptyQueue', (queue) => {
+        const guildId = queue.guild.id;
 
         if (queueEndTimeouts.has(guildId)) {
             clearTimeout(queueEndTimeouts.get(guildId));
@@ -199,20 +125,37 @@ function registerLavalinkEvents(client) {
         }
 
         if (client.autoplayEnabled.get(guildId)) {
-            const timeout = setTimeout(() => {
+            const timeout = setTimeout(async () => {
                 queueEndTimeouts.delete(guildId);
 
-                const currentPlayer = client.lavalink.getPlayer(guildId);
-                if (currentPlayer?.queue.current || currentPlayer?.playing) return;
+                const currentQueue = useQueue(guildId);
+                if (currentQueue?.currentTrack || currentQueue?.isPlaying()) return;
 
-                const playerMessage = client.playerController.playerMessages.get(guildId);
-                if (playerMessage) {
-                    const textChannel = client.channels.cache.get(playerMessage.channelId);
-                    if (textChannel) {
-                        textChannel.send(client.t('QUEUE_ENDED')).catch(() => {});
+                try {
+                    const history = useHistory(guildId);
+                    const lastPlayed = history?.previous?.()?.[0];
+                    if (!lastPlayed) {
+                        cleanupGuildPlayer(client, guildId);
+                        return;
                     }
+
+                    const tracks = await findAutoplayTracks(client.discordPlayer, guildId, lastPlayed);
+                    if (!client.autoplayEnabled.get(guildId)) return;
+
+                    if (tracks.length > 0) {
+                        const q = useQueue(guildId);
+                        if (!q) return;
+                        for (const track of tracks) {
+                            q.tracks.add(track);
+                        }
+                        if (!q.isPlaying()) q.node.play();
+                    } else {
+                        cleanupGuildPlayer(client, guildId);
+                    }
+                } catch (err) {
+                    logger.error('Autoplay failed:', err);
+                    cleanupGuildPlayer(client, guildId);
                 }
-                cleanupGuildPlayer(client, guildId);
             }, AUTOPLAY_TIMEOUT_MS);
             queueEndTimeouts.set(guildId, timeout);
             return;
@@ -228,12 +171,16 @@ function registerLavalinkEvents(client) {
         cleanupGuildPlayer(client, guildId);
     });
 
-    client.lavalink.on("trackStuck", (player, track, payload) => {
-        logger.warn(`Track stuck: ${track?.info?.title} (threshold: ${payload.thresholdMs}ms)`);
+    player.events.on('playerSkip', (queue, track) => {
+        logger.warn(`Track skipped: ${track.title}`);
     });
 
-    client.lavalink.on("trackError", (player, track, payload) => {
-        logger.error(`Track error: ${track?.info?.title} — ${payload.exception?.message || payload.error || 'Unknown error'}`);
+    player.events.on('playerError', (queue, track, error) => {
+        logger.error(`Track error: ${track.title} — ${error.message}`);
+    });
+
+    player.events.on('error', (queue, error) => {
+        logger.error('Queue error:', error);
     });
 }
 
@@ -241,25 +188,15 @@ function setupShutdown(client) {
     const shutdown = async (signal) => {
         logger.info(`Received ${signal}, shutting down gracefully...`);
 
-        client.lavalinkConnectionManager.destroy();
-
-        if (client.publicNodeProvider) {
-            client.publicNodeProvider.destroy();
-        }
-
         searchSessions.destroy();
 
-        // Destroy all players before destroying nodes
-        for (const player of client.lavalink.players.values()) {
-            await player.destroy();
-        }
-
-        for (const node of client.lavalink.nodeManager.nodes.values()) {
-            await node.destroy();
+        try {
+            client.discordPlayer.destroy();
+        } catch {
+            // Player may not be initialized
         }
 
         await client.destroy();
-
         process.exit(0);
     };
 
@@ -269,8 +206,8 @@ function setupShutdown(client) {
 
 async function bootstrap() {
     const client = createClient();
-    await setupLavalink(client);
-    registerLavalinkEvents(client);
+    await setupPlayer(client);
+    registerPlayerEvents(client);
     loadCommands(client);
     registerEvents(client);
     setupShutdown(client);

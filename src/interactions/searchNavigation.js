@@ -1,176 +1,84 @@
-const { MessageFlags } = require('discord.js');
-const searchSessions = require('../utils/searchSessions');
-const { isLavalinkAvailable } = require('../utils/interactionHelpers');
-const { createSearchEmbed, createSearchComponents } = require('../utils/embeds');
-const { getValidVolume } = require('../utils/volumeValidator');
-const logger = require('../utils/logger');
+const { useMainPlayer, useQueue } = require('discord-player');
 
 async function handleSearchNavigation(interaction) {
-    const { client, customId, user, guild } = interaction;
-    const lang = client.defaultLanguage;
+    const { client, guild, member, customId, channel } = interaction;
+    const searchSessions = require('../utils/searchSessions');
 
-    try {
-        const parts = customId.split(':');
-        const [component, action, sessionId, ...args] = parts;
+    if (customId === 'search_cancel') {
+        const session = searchSessions.getSessionByInteraction(interaction);
+        if (session) searchSessions.deleteSession(session.sessionId);
+        return interaction.update({ content: client.t('SEARCH_CANCELLED'), embeds: [], components: [] });
+    }
 
-        if (component !== 'search') return;
+    const session = searchSessions.getSessionByInteraction(interaction);
+    if (!session) {
+        return interaction.reply({ content: client.t('SEARCH_SESSION_EXPIRED'), flags: 64 });
+    }
 
-        // Get search session
-        const session = searchSessions.getSession(sessionId);
-        
-        if (!session) {
-            return interaction.update({
-                content: client.languageManager.get(lang, 'SEARCH_SESSION_EXPIRED'),
-                embeds: [],
-                components: []
-            });
+    if (interaction.user.id !== session.userId) {
+        return interaction.reply({ content: client.t('NOT_YOUR_SEARCH'), flags: 64 });
+    }
+
+    if (customId === 'search_prev' || customId === 'search_next') {
+        const direction = customId === 'search_next' ? 1 : -1;
+        const newPage = (session.currentPage || 0) + direction;
+        session.currentPage = newPage;
+        const { createSearchEmbed, createSearchComponents } = require('../utils/embeds');
+        const embed = createSearchEmbed(client, session.results, session.query, newPage);
+        const components = createSearchComponents(session.sessionId, session.results, newPage);
+        return interaction.update({ embeds: [embed], components });
+    }
+
+    if (customId.startsWith('search_select_')) {
+        const index = parseInt(customId.split('_')[2], 10);
+        const track = session.results[index];
+        if (!track) {
+            return interaction.reply({ content: client.t('TRACK_NOT_FOUND'), flags: 64 });
         }
-        
-        // Validate session ownership
-        if (session.userId !== user.id) {
-            return interaction.reply({
-                content: client.languageManager.get(lang, 'SEARCH_NOT_YOUR_SESSION'),
-                flags: MessageFlags.Ephemeral
-            });
+
+        const voiceChannel = member.voice.channel;
+        if (!voiceChannel) {
+            searchSessions.deleteSession(session.sessionId);
+            return interaction.reply({ content: client.t('JOIN_VOICE_FIRST'), flags: 64 });
         }
 
-        // Check if Lavalink is available
-        if (!isLavalinkAvailable(client)) {
-            return interaction.reply({
-                content: client.languageManager.get(lang, 'LAVALINK_UNAVAILABLE'),
-                flags: MessageFlags.Ephemeral
-            });
-        }
+        const player = useMainPlayer();
+        let existingQueue = useQueue(guild.id);
 
-        let shouldUpdate = false;
-        let responseMessage = null;
-
-        await interaction.deferUpdate();
-
-        switch (action) {
-            case 'prev':
-                if (searchSessions.updatePage(sessionId, session.currentPage - 1)) {
-                    shouldUpdate = true;
-                }
-                break;
-
-            case 'next':
-                if (searchSessions.updatePage(sessionId, session.currentPage + 1)) {
-                    shouldUpdate = true;
-                }
-                break;
-
-            case 'select':
-                // Handle dropdown selection - connect player on demand
-                const trackIndex = parseInt(interaction.values[0]);
-                if (!isNaN(trackIndex)) {
-                    const track = session.tracks[trackIndex];
-                    if (track) {
-                        // Validate user still in voice channel
-                        const member = await guild.members.fetch(user.id);
-                        const voiceChannel = member.voice.channel;
-
-                        if (!voiceChannel) {
-                            return interaction.followUp({
-                                content: client.languageManager.get(lang, 'NOT_IN_VOICE'),
-                                flags: MessageFlags.Ephemeral
-                            });
-                        }
-
-                        // Get or create player
-                        let player = client.lavalink.getPlayer(guild.id);
-
-                        if (!player) {
-                            // Create player if it doesn't exist
-                            player = client.lavalink.createPlayer({
-                                guildId: guild.id,
-                                voiceChannelId: session.voiceChannelId,
-                                textChannelId: session.textChannelId,
-                                selfDeaf: true,
-                                selfMute: false,
-                                volume: getValidVolume(process.env.DEFAULT_VOLUME, 80),
-                            });
-                        }
-
-                        // Connect if not already connected (player may exist from search but not be connected)
-                        if (!player.connected) {
-                            await player.connect();
-                        }
-
-                        // Add track and play
-                        player.queue.add(track);
-                        if (!player.playing) player.play();
-
-                        const trackTitle = track.info?.title || 'Unknown';
-
-                        // Send or update the player controller
-                        const existingMessageId = client.playerController.playerMessages.get(guild.id);
-                        if (existingMessageId) {
-                            setTimeout(() => client.playerController.updatePlayer(guild.id).catch(() => {}), 100);
-                        } else {
-                            // Get the text channel to send the player UI
-                            const textChannel = await client.channels.fetch(session.textChannelId).catch(() => null);
-                            if (textChannel) {
-                                setTimeout(() => client.playerController.sendPlayer(textChannel, player).catch(() => {}), 100);
-                            }
-                        }
-
-                        // Clean up search session after selection
-                        searchSessions.deleteSession(sessionId);
-
-                        // Clear the search UI and show confirmation
-                        await interaction.editReply({
-                            content: client.languageManager.get(lang, 'SEARCH_TRACK_ADDED', trackTitle),
-                            embeds: [],
-                            components: []
-                        });
-                        return; // Exit early
-                    }
-                }
-                break;
-
-            case 'cancel':
-                // Clean up player if it was created for search but never connected
-                const existingPlayer = client.lavalink.getPlayer(guild.id);
-                if (existingPlayer && !existingPlayer.connected && !existingPlayer.playing) {
-                    client.autoplayEnabled.delete(guild.id);
-                    existingPlayer.destroy();
-                }
-
-                searchSessions.deleteSession(sessionId);
-                await interaction.editReply({
-                    content: client.languageManager.get(lang, 'SEARCH_CANCELLED'),
-                    embeds: [],
-                    components: []
+        try {
+            if (!existingQueue) {
+                const result = await player.play(voiceChannel, track, {
+                    nodeOptions: {
+                        metadata: channel,
+                        selfDeaf: true,
+                        volume: session.volume,
+                        leaveOnEmpty: true,
+                        leaveOnEnd: true,
+                    },
+                    requestedBy: interaction.user,
                 });
-                return; // Exit early
-        }
-
-        if (shouldUpdate) {
-            const pageData = searchSessions.getCurrentPageData(sessionId);
-            if (pageData) {
-                const embed = createSearchEmbed(client, pageData, session.query);
-                const components = createSearchComponents(client, pageData, sessionId);
-                await interaction.editReply({ embeds: [embed], components });
+                existingQueue = result.queue;
+            } else {
+                existingQueue.tracks.add(track);
+                if (!existingQueue.isPlaying()) {
+                    existingQueue.node.play();
+                }
             }
-        }
 
-        if (responseMessage) {
-            await interaction.followUp({ content: responseMessage, flags: MessageFlags.Ephemeral });
-        }
+            searchSessions.deleteSession(session.sessionId);
 
-    } catch (error) {
-        logger.error('Error handling search navigation:', error);
-        if (!interaction.replied && !interaction.deferred) {
-            await interaction.deferUpdate().catch(() => {});
+            await interaction.update({
+                content: client.t('TRACK_ADDED', track.title, track.author),
+                embeds: [],
+                components: [],
+            });
+
+            await client.playerController.sendPlayer(channel, guild.id, existingQueue.currentTrack);
+        } catch {
+            searchSessions.deleteSession(session.sessionId);
+            await interaction.update({ content: client.t('PLAY_ERROR'), embeds: [], components: [] });
         }
-        await interaction.followUp({
-            content: client.languageManager.get(lang, 'SEARCH_INTERACTION_ERROR'),
-            flags: MessageFlags.Ephemeral
-        }).catch(() => {});
     }
 }
 
-module.exports = {
-    handleSearchNavigation,
-};
+module.exports = { handleSearchNavigation };

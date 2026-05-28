@@ -1,6 +1,6 @@
 const { Events } = require('discord.js');
+const { useQueue } = require('discord-player');
 const searchSessions = require('../utils/searchSessions');
-const { emptyChannelTimeouts } = require('./voiceStateUpdate');
 
 module.exports = {
     name: Events.GuildDelete,
@@ -8,9 +8,8 @@ module.exports = {
         const client = guild.client;
         const guildId = guild.id;
 
-        // Clean up Lavalink player and controller message
-        const player = client.lavalink.getPlayer(guildId);
-        if (player) player.destroy();
+        const queue = useQueue(guildId);
+        if (queue) queue.delete();
         client.playerController.deletePlayer(guildId);
 
         // Clean up search sessions for this guild
@@ -22,9 +21,9 @@ module.exports = {
         client.updatePresence();
 
         // Clear any pending empty-channel disconnect timer
-        if (emptyChannelTimeouts.has(guildId)) {
-            clearTimeout(emptyChannelTimeouts.get(guildId));
-            emptyChannelTimeouts.delete(guildId);
+        if (client._emptyChannelTimeouts?.has(guildId)) {
+            clearTimeout(client._emptyChannelTimeouts.get(guildId));
+            client._emptyChannelTimeouts.delete(guildId);
         }
     },
 };

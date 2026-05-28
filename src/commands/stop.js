@@ -1,24 +1,16 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-const { requirePlayer } = require('../utils/interactionHelpers');
-const logger = require('../utils/logger');
+const { requirePlayer, requireSameVoice } = require('../utils/interactionHelpers');
 
 module.exports = {
-    data: new SlashCommandBuilder()
-        .setName('stop')
-        .setDescription('Stops playback and clears the queue.'),
+    data: { name: 'stop', description: 'Stop playback and clear the queue' },
     async execute(interaction) {
-        const { client } = interaction;
+        const { client, guild } = interaction;
+        const queue = await requirePlayer(interaction);
+        if (!queue) return;
+        if (!(await requireSameVoice(interaction, queue))) return;
 
-        const player = await requirePlayer(interaction);
-        if (!player) return;
+        queue.delete();
+        client.autoplayEnabled.delete(guild.id);
 
-        logger.cmd(`/stop by ${interaction.user.tag} in #${interaction.channel.name} (Guild: ${interaction.guild.name})`);
-
-        client.autoplayEnabled.delete(interaction.guild.id);
-        await player.destroy();
-        return interaction.reply({ 
-            content: client.languageManager.get(client.defaultLanguage, 'STOPPED_PLAYBACK'),
-            flags: MessageFlags.Ephemeral
-        });
+        await interaction.reply({ content: client.t('STOPPED'), flags: 64 });
     },
-}; 
+};

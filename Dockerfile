@@ -13,7 +13,7 @@ RUN npm ci --omit=dev --ignore-engines
 FROM node:22.21-alpine
 
 # Add runtime dependencies
-RUN apk add --no-cache tini
+RUN apk add --no-cache tini ffmpeg
 
 # Create app user
 RUN addgroup -g 1001 -S nodejs && \

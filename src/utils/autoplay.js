@@ -1,175 +1,177 @@
-// Autoplay recommendation engine — 3-tier cascade with 3-layer deduplication.
-// Tier 1: YouTube Mix URL (YouTube's recommendation algorithm)
-// Tier 2: Smart search rotation via YouTube Music
-// Tier 3: Relaxed dedup last resort
+const { useQueue, useHistory } = require('discord-player');
+const logger = require('./logger');
 
-function normalizeString(str) {
-    return str
-        .toLowerCase()
-        .replace(/\(official\s*(music\s*)?video\)/gi, '')
-        .replace(/\((lyrics?|audio|official\s*audio|visualizer|hd|hq)\)/gi, '')
-        .replace(/\[.*?\]/g, '')
-        .replace(/\s*-\s*topic$/gi, '')
-        .replace(/vevo$/gi, '')
-        .replace(/[^\w\s]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+const YOUTUBE_VIDEO_PATTERN = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/;
+const YOUTUBE_CHANNEL_PATTERN = /youtube\.com\/channel\/([\w-]+)/;
+const ISRC_PATTERN = /^[A-Z]{2}-?\w{3}-?\d{2}-?\d{5}$/;
+
+function extractYouTubeId(uri) {
+    if (!uri) return null;
+    const match = uri.match(YOUTUBE_VIDEO_PATTERN);
+    return match ? match[1] : null;
 }
 
-function cleanAuthor(author) {
-    return author
-        .replace(/vevo$/i, '')
-        .replace(/\s*-\s*topic$/i, '')
-        .replace(/official$/i, '')
-        .trim();
-}
-
-function getRecentIdentifiers(player) {
-    const ids = new Set();
-    if (player.queue.current) ids.add(player.queue.current.info.identifier);
-    for (const t of player.queue.previous.slice(-25)) {
-        ids.add(t.info.identifier);
-    }
-    for (const t of player.queue.tracks) {
-        if (t.info) ids.add(t.info.identifier);
-    }
-    return ids;
-}
-
-function isDuplicate(track, recentIds, history) {
-    // Layer 1: Exact identifier match (O(1))
-    if (recentIds.has(track.info.identifier)) return true;
-
-    // Layer 2: ISRC match (same recording across uploads)
-    if (track.info.isrc) {
-        for (const h of history) {
-            if (h.info.isrc && h.info.isrc === track.info.isrc) return true;
+function buildSearchQuery(track) {
+    const parts = [];
+    if (track.author && track.title) {
+        if (YOUTUBE_CHANNEL_PATTERN.test(track.url || '')) {
+            parts.push(`${track.author} - ${track.title}`);
+        } else {
+            const authorName = track.author.replace(/\s*(-\s*Topic)?$/i, '').trim();
+            parts.push(`${authorName} - ${track.title}`);
         }
+    } else if (track.title) {
+        parts.push(track.title);
+    }
+    if (parts.length > 0) return parts.join(' ');
+
+    if (track.author) return track.author;
+    return track.title || 'unknown';
+}
+
+function isTrackDuplicate(candidate, existingTracks) {
+    return existingTracks.some(t =>
+        t.id === candidate.id ||
+        (t.title === candidate.title && t.author === candidate.author)
+    );
+}
+
+function isTrackAllowed(track) {
+    return !YOUTUBE_CHANNEL_PATTERN.test(track.url || '');
+}
+
+async function findAutoplayTracks(discordPlayer, guildId, lastPlayedTrack) {
+    const MAX_RETRIES = 3;
+    const tracksPerRetry = 5;
+
+    if (!lastPlayedTrack) {
+        logger.warn('[Autoplay] No last played track');
+        return [];
     }
 
-    // Layer 3: Normalized title match (catches covers, re-uploads, lyric videos)
-    const normalized = normalizeString(track.info.title);
-    for (const h of history) {
-        const hNorm = normalizeString(h.info.title);
-        if (normalized === hNorm) return true;
-        if (normalized.length > 10 && hNorm.length > 10) {
-            if (normalized.includes(hNorm) || hNorm.includes(normalized)) return true;
-        }
+    if (!isTrackAllowed(lastPlayedTrack)) {
+        logger.warn(`[Autoplay] Skipping channel track: ${lastPlayedTrack.title}`);
+        return [];
     }
 
-    return false;
-}
+    const queue = useQueue(guildId);
+    const history = useHistory(guildId);
 
-function filterCandidates(tracks, recentIds, history) {
-    return tracks.filter(t => !isDuplicate(t, recentIds, history));
-}
+    const existingTracks = [];
+    if (queue?.currentTrack) existingTracks.push(queue.currentTrack);
+    if (queue?.tracks) existingTracks.push(...queue.tracks.toArray());
+    if (history) {
+        const prevTracks = history.previous();
+        if (prevTracks) existingTracks.push(...prevTracks);
+    }
 
-function pickRandom(arr, max = 3) {
-    const index = Math.floor(Math.random() * Math.min(max, arr.length));
-    return arr[index];
-}
+    const existingIds = new Set(existingTracks.map(t => t.id).filter(Boolean));
+    const existingTitles = new Set(existingTracks.map(t => `${t.title}|${t.author}`.toLowerCase()));
 
-/**
- * Finds autoplay tracks using a 3-tier cascade strategy.
- * Returns an array of 0-2 tracks to add to the queue.
- */
-async function findAutoplayTracks(player, lastPlayedTrack) {
-    if (!lastPlayedTrack?.info) return [];
+    function isDuplicate(candidate) {
+        if (existingIds.has(candidate.id)) return true;
+        const key = `${candidate.title}|${candidate.author}`.toLowerCase();
+        return existingTitles.has(key);
+    }
 
-    const recentIds = getRecentIdentifiers(player);
-    recentIds.add(lastPlayedTrack.info.identifier);
-    const history = player.queue.previous.slice(-25);
-    const videoId = lastPlayedTrack.info.identifier;
-    const source = lastPlayedTrack.info.sourceName;
-    const author = lastPlayedTrack.info.author;
-    const title = lastPlayedTrack.info.title;
+    async function searchWithMix() {
+        const videoId = extractYouTubeId(lastPlayedTrack.url);
+        if (!videoId) return null;
 
-    // ── TIER 1: YouTube Mix URL (best recommendations) ──
-    if (source === 'youtube' || source === 'youtubemusic') {
+        const mixUrl = `https://www.youtube.com/watch?v=${videoId}&list=RD${videoId}`;
+        logger.debug(`[Autoplay] Searching with mix: ${mixUrl}`);
+
         try {
-            const mixUrl = `https://www.youtube.com/watch?v=${videoId}&list=RD${videoId}`;
-            const res = await player.search({ query: mixUrl });
+            const result = await discordPlayer.search(mixUrl, {});
+            if (!result?.tracks || result.tracks.length === 0) return null;
 
-            if (res?.tracks?.length) {
-                const candidates = filterCandidates(res.tracks, recentIds, history);
-                if (candidates.length > 0) return candidates.slice(0, 2);
-            }
-        } catch {
-            // Mix URL failed — fall through to Tier 2
+            return result.tracks
+                .filter(t => t.id !== lastPlayedTrack.id)
+                .filter(t => isTrackAllowed(t))
+                .filter(t => !isDuplicate(t))
+                .slice(0, tracksPerRetry);
+        } catch (err) {
+            logger.warn(`[Autoplay] Mix search failed: ${err.message}`);
+            return null;
         }
     }
 
-    // ── TIER 2: Smart search rotation via YouTube Music ──
-    if (author) {
-        const artist = cleanAuthor(author);
-        const cleanedTitle = title.replace(/\(.*?\)/g, '').replace(/\[.*?\]/g, '').trim();
-        const partialTitle = cleanedTitle.split(' ').slice(0, 3).join(' ');
+    async function searchWithISRC() {
+        const raw = lastPlayedTrack.raw;
+        const isrc = raw?.isrc;
+        if (!isrc || !ISRC_PATTERN.test(isrc)) return null;
 
-        const queryStrategies = [
-            `ytmsearch:${artist}`,
-            `ytmsearch:${artist} mix`,
-            `ytmsearch:${artist} ${partialTitle}`,
-        ];
+        const query = `https://music.youtube.com/search?q=${encodeURIComponent(`isrc:${isrc}`)}`;
+        logger.debug(`[Autoplay] Searching with ISRC: ${isrc}`);
 
-        // Detect same-artist saturation: if 3+ of last 5 tracks share the same artist,
-        // broaden the query to break out of the artist loop
-        const last5Artists = history.slice(-5).map(t => normalizeString(cleanAuthor(t.info.author)));
-        const artistCount = last5Artists.filter(a => a === normalizeString(artist)).length;
-        if (artistCount >= 3) {
-            queryStrategies.unshift(`ytmsearch:${cleanedTitle} music`);
-        }
+        try {
+            const result = await discordPlayer.search(query, {});
+            if (!result?.tracks || result.tracks.length === 0) return null;
 
-        // Add variety from recent history — cross-pollinate artists
-        const recentArtists = [...new Set(
-            history.slice(-10).map(t => cleanAuthor(t.info.author))
-        )].filter(a => a !== artist);
-
-        if (recentArtists.length > 0) {
-            const altArtist = pickRandom(recentArtists);
-            queryStrategies.push(`ytmsearch:${altArtist} ${artist}`);
-        }
-
-        // Shuffle strategies but keep the first (most relevant) in position
-        const [primary, ...rest] = queryStrategies;
-        const shuffledRest = rest.sort(() => Math.random() - 0.5);
-        const orderedStrategies = [primary, ...shuffledRest];
-
-        for (const query of orderedStrategies) {
-            try {
-                const res = await player.search({ query });
-
-                if (res?.tracks?.length) {
-                    const candidates = filterCandidates(res.tracks, recentIds, history);
-                    if (candidates.length > 0) return candidates.slice(0, 2);
-                }
-            } catch {
-                continue;
-            }
+            return result.tracks
+                .filter(t => t.id !== lastPlayedTrack.id)
+                .filter(t => isTrackAllowed(t))
+                .filter(t => !isDuplicate(t))
+                .slice(0, tracksPerRetry);
+        } catch (err) {
+            logger.warn(`[Autoplay] ISRC search failed: ${err.message}`);
+            return null;
         }
     }
 
-    // ── TIER 3: Last resort — relaxed dedup to prevent silence ──
+    async function searchWithYouTubeMusic() {
+        const query = buildSearchQuery(lastPlayedTrack);
+        if (!query || query === 'unknown') return null;
+
+        const searchQuery = `https://music.youtube.com/search?q=${encodeURIComponent(query)}`;
+        logger.debug(`[Autoplay] Searching YouTube Music: ${query}`);
+
+        try {
+            const result = await discordPlayer.search(searchQuery, {});
+            if (!result?.tracks || result.tracks.length === 0) return null;
+
+            return result.tracks
+                .filter(t => t.id !== lastPlayedTrack.id)
+                .filter(t => isTrackAllowed(t))
+                .filter(t => !isDuplicate(t))
+                .slice(0, tracksPerRetry);
+        } catch (err) {
+            logger.warn(`[Autoplay] YouTube Music search failed: ${err.message}`);
+            return null;
+        }
+    }
+
     try {
-        const artist = author ? cleanAuthor(author) : '';
-        const query = artist ? `ytmsearch:${artist}` : `ytmsearch:${normalizeString(title)}`;
-        const res = await player.search({ query });
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            logger.debug(`[Autoplay] Recommendation attempt ${attempt + 1}/${MAX_RETRIES}`);
 
-        if (res?.tracks?.length) {
-            // Only check against last 10 tracks (relaxed)
-            const relaxedIds = new Set(
-                player.queue.previous.slice(-10).map(t => t.info.identifier)
-            );
-            const fallback = res.tracks.find(t => !relaxedIds.has(t.info.identifier));
-            if (fallback) return [fallback];
+            const mixTracks = await searchWithMix();
+            if (mixTracks && mixTracks.length > 0) {
+                logger.autoplay(`Found ${mixTracks.length} tracks from mix (attempt ${attempt + 1})`);
+                return mixTracks;
+            }
 
-            // Absolute last resort: pick something random
-            return [res.tracks[Math.floor(Math.random() * res.tracks.length)]];
+            const isrcTracks = await searchWithISRC();
+            if (isrcTracks && isrcTracks.length > 0) {
+                logger.autoplay(`Found ${isrcTracks.length} tracks from ISRC (attempt ${attempt + 1})`);
+                return isrcTracks;
+            }
+
+            const ytmTracks = await searchWithYouTubeMusic();
+            if (ytmTracks && ytmTracks.length > 0) {
+                logger.autoplay(`Found ${ytmTracks.length} tracks from YouTube Music (attempt ${attempt + 1})`);
+                return ytmTracks;
+            }
+
+            logger.warn(`[Autoplay] No tracks found in attempt ${attempt + 1}`);
         }
-    } catch {
-        // All strategies exhausted — queueEnd event will fire
-    }
 
-    return [];
+        logger.warn(`[Autoplay] No tracks found after ${MAX_RETRIES} attempts`);
+        return [];
+    } catch (err) {
+        logger.error(`[Autoplay] Error in findAutoplayTracks: ${err.message}`);
+        return [];
+    }
 }
 
 module.exports = { findAutoplayTracks };
