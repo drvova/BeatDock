@@ -39,13 +39,13 @@
     "npm": ">=11.4.2"
   },
   "dependencies": {
-    "@discord-player/extractor": "^4.5.1",
+    "@discord-player/extractor": "^7.2.0",
     "@distube/ytdl-core": "^4.16.12",
-    "discord-player": "^6.7.1",
+    "discord-player": "^7.2.0",
     "discord.js": "^14.26.4",
     "dotenv": "^17.4.2",
     "ffmpeg-static": "^5.2.0",
-    "mediaplex": "^0.0.9",
+    "mediaplex": "^1.0.0",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {

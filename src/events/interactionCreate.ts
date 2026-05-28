@@ -68,14 +68,14 @@ async function handleQueueInteraction(interaction: ButtonInteraction, action: st
       if (!queue) return;
       if (!(await requireSameVoice(interaction, queue))) return;
 
-      const modeCycle = new Map([
+      const modeCycle = new Map<number, { next: number; label: string }>([
         [QueueRepeatMode.OFF, { next: QueueRepeatMode.TRACK, label: 'Track' }],
         [QueueRepeatMode.TRACK, { next: QueueRepeatMode.QUEUE, label: 'Queue' }],
         [QueueRepeatMode.QUEUE, { next: QueueRepeatMode.OFF, label: 'Off' }],
       ]);
       const current = queue.repeatMode;
       const cycle = modeCycle.get(current) ?? modeCycle.get(QueueRepeatMode.OFF)!;
-      queue.setRepeatMode(cycle.next);
+      queue.setRepeatMode(cycle.next as QueueRepeatMode);
       client.playerController.updatePlayer(interaction.guild!.id);
       await interaction.reply(`🔁 ${client.t('LOOP_SET', cycle.label)}`);
       break;
