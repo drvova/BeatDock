@@ -5,9 +5,11 @@ import {
   type ChatInputCommandInteraction,
   type ButtonInteraction,
   type StringSelectMenuInteraction,
+  type GuildMember,
 } from 'discord.js';
 import { QueueRepeatMode, useMainPlayer } from 'discord-player';
-import { requirePlayer, requireSameVoice } from '../utils/interactionHelpers.js';
+import { useQueue } from 'discord-player';
+import type { GuildQueue } from 'discord-player';
 import { playPrevious, shuffleQueue, clearQueue, createPaginatedQueueResponse } from '../utils/PlayerActions.js';
 import { handleFilterNavigation } from '../interactions/filterNavigation.js';
 import { handleSearchNavigation } from '../interactions/searchNavigation.js';
@@ -16,11 +18,25 @@ import type { BotClient } from '../types/client.js';
 
 async function handlePlayerInteraction(interaction: ButtonInteraction, action: string): Promise<void> {
   const client = interaction.client as BotClient;
-  const queue = await requirePlayer(interaction);
-  if (!queue) return;
-  if (!(await requireSameVoice(interaction, queue))) return;
 
+  // Defer FIRST to acknowledge within the 3-second window
   await interaction.deferUpdate();
+
+  const queue = useQueue(interaction.guild!.id);
+  if (!queue) {
+    await interaction.followUp({ content: `❌ ${client.t('NO_PLAYER')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+    return;
+  }
+
+  const member = interaction.member as GuildMember;
+  if (!member.voice.channel) {
+    await interaction.followUp({ content: `❌ ${client.t('JOIN_VOICE_FIRST')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+    return;
+  }
+  if (queue.channel?.id !== member.voice.channel.id) {
+    await interaction.followUp({ content: `❌ ${client.t('ALREADY_IN_VOICE')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+    return;
+  }
 
   switch (action) {
     case 'back': {
@@ -89,13 +105,55 @@ async function handlePlayerInteraction(interaction: ButtonInteraction, action: s
 async function handleQueueInteraction(interaction: ButtonInteraction, action: string): Promise<void> {
   const client = interaction.client as BotClient;
 
+  // prev/next/close use interaction.update() — no defer needed
+  if (action === 'prev' || action === 'next') {
+    const queue = useQueue(interaction.guild!.id);
+    if (!queue) return;
+    const pageData = (await import('../utils/PlayerActions.js')).paginatedQueue(queue, 1);
+    const currentPage = pageData.page;
+    const newPage = action === 'prev' ? currentPage - 1 : currentPage + 1;
+    const response = createPaginatedQueueResponse(client, queue, newPage);
+    await interaction.update(response);
+    return;
+  }
+  if (action === 'close') {
+    await interaction.update({ content: 'Queue closed.', embeds: [], components: [] });
+    return;
+  }
+
+  // list uses interaction.reply() — no defer needed
+  if (action === 'list') {
+    const queue = useQueue(interaction.guild!.id);
+    if (!queue) {
+      await interaction.reply({ content: `❌ ${client.t('NO_PLAYER')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+      return;
+    }
+    const response = createPaginatedQueueResponse(client, queue, 1);
+    await interaction.reply({ ...response, flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  // loop/clear — defer first, then validate
+  await interaction.deferUpdate();
+
+  const queue = useQueue(interaction.guild!.id);
+  if (!queue) {
+    await interaction.followUp({ content: `❌ ${client.t('NO_PLAYER')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+    return;
+  }
+
+  const member = interaction.member as GuildMember;
+  if (!member.voice.channel) {
+    await interaction.followUp({ content: `❌ ${client.t('JOIN_VOICE_FIRST')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+    return;
+  }
+  if (queue.channel?.id !== member.voice.channel.id) {
+    await interaction.followUp({ content: `❌ ${client.t('ALREADY_IN_VOICE')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+    return;
+  }
+
   switch (action) {
     case 'loop': {
-      const queue = await requirePlayer(interaction);
-      if (!queue) return;
-      if (!(await requireSameVoice(interaction, queue))) return;
-
-      await interaction.deferUpdate();
       const modeCycle = new Map<number, { next: number; label: string }>([
         [QueueRepeatMode.OFF, { next: QueueRepeatMode.TRACK, label: 'Track' }],
         [QueueRepeatMode.TRACK, { next: QueueRepeatMode.QUEUE, label: 'Queue' }],
@@ -108,39 +166,16 @@ async function handleQueueInteraction(interaction: ButtonInteraction, action: st
       await interaction.followUp({ content: `🔁 ${client.t('LOOP_SET', cycle.label)}`, flags: MessageFlags.Ephemeral }).catch(() => {});
       break;
     }
-    case 'list': {
-      const queue = await requirePlayer(interaction);
-      if (!queue) return;
-      const response = createPaginatedQueueResponse(client, queue, 1);
-      await interaction.reply({ ...response, flags: MessageFlags.Ephemeral });
-      break;
-    }
     case 'clear': {
-      const queue = await requirePlayer(interaction, { requireQueue: true });
-      if (!queue) return;
-      if (!(await requireSameVoice(interaction, queue))) return;
-
-      await interaction.deferUpdate();
+      if (queue.tracks.size === 0 && !queue.currentTrack) {
+        await interaction.followUp({ content: `❌ ${client.t('QUEUE_EMPTY')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
+        break;
+      }
       clearQueue(queue);
       client.autoplayEnabled.delete(interaction.guild!.id);
       client.playerController.updatePlayer(interaction.guild!.id);
       await interaction.followUp({ content: `🗑 ${client.t('QUEUE_CLEARED')}`, flags: MessageFlags.Ephemeral }).catch(() => {});
       break;
-    }
-    case 'prev':
-    case 'next': {
-      const queue = await requirePlayer(interaction);
-      if (!queue) return;
-      const pageData = (await import('../utils/PlayerActions.js')).paginatedQueue(queue, 1);
-      const currentPage = pageData.page;
-      const newPage = action === 'prev' ? currentPage - 1 : currentPage + 1;
-      const response = createPaginatedQueueResponse(client, queue, newPage);
-      await interaction.update(response);
-      return;
-    }
-    case 'close': {
-      await interaction.update({ content: 'Queue closed.', embeds: [], components: [] });
-      return;
     }
   }
 }
@@ -270,6 +305,7 @@ export default {
     } catch (error: unknown) {
       const err = error as { code?: number; message?: string };
       if (err.code === 10062) return; // Unknown interaction — expired
+      if (err.code === 40060) return; // Interaction already acknowledged
 
       errorCounter.add(1, { subsystem: 'interaction' });
       commandCounter.add(1, { command: 'unknown', outcome: 'error' });
