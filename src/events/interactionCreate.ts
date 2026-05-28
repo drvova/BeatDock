@@ -1,10 +1,11 @@
 import {
   Events,
+  type AutocompleteInteraction,
   type ChatInputCommandInteraction,
   type ButtonInteraction,
   type StringSelectMenuInteraction,
 } from 'discord.js';
-import { QueueRepeatMode } from 'discord-player';
+import { QueueRepeatMode, useMainPlayer } from 'discord-player';
 import { requirePlayer, requireSameVoice } from '../utils/interactionHelpers.js';
 import { playPrevious, shuffleQueue, clearQueue, createPaginatedQueueResponse } from '../utils/PlayerActions.js';
 import { handleFilterNavigation } from '../interactions/filterNavigation.js';
@@ -181,14 +182,39 @@ async function handleSelectMenuInteraction(interaction: StringSelectMenuInteract
   }
 }
 
+async function handleAutocomplete(interaction: AutocompleteInteraction): Promise<void> {
+  const focused = interaction.options.getFocused();
+  if (!focused) {
+    await interaction.respond([]);
+    return;
+  }
+
+  try {
+    const player = useMainPlayer();
+    const result = await player.search(focused, { requestedBy: interaction.user as any });
+    const tracks = result.tracks.slice(0, 10);
+
+    await interaction.respond(
+      tracks.map(track => ({
+        name: `${track.title} — ${track.author}`.slice(0, 100),
+        value: track.url,
+      })),
+    );
+  } catch {
+    await interaction.respond([]);
+  }
+}
+
 export default {
   name: Events.InteractionCreate,
   once: false,
-  async execute(interaction: ChatInputCommandInteraction | ButtonInteraction | StringSelectMenuInteraction) {
+  async execute(interaction: ChatInputCommandInteraction | ButtonInteraction | StringSelectMenuInteraction | AutocompleteInteraction) {
     const client = interaction.client as BotClient;
 
     try {
-      if (interaction.isChatInputCommand()) {
+      if (interaction.isAutocomplete()) {
+        await handleAutocomplete(interaction);
+      } else if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
         if (!command) return;
         await command.execute(interaction);
